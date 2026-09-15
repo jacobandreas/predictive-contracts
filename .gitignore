@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+venv_train/
+
+# macOS
+.DS_Store
+
+# Datasets copied from HF / GitHub (35 MB; regenerate per docs/overview.md)
+data/
+
+# Experiment outputs pulled from the cluster (GBs of transcripts, rollout logs, adapters, embeddings).
+# The small text summaries under results/probe/out/ are kept.
+results/*
+!results/probe/
+results/probe/*
+!results/probe/out/
+
+# Local scratch
+*.log
+*.err

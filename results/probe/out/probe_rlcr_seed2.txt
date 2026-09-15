@@ -1,0 +1,32 @@
+### rlcr_hack_yesno_seed2 features -> its test rollouts (with commitment)
+1190 rollouts on 119 problems, 2560-dim features
+success: base rate 0.163 | probe AUC 0.730, Brier 0.123 (base-rate Brier 0.136), accuracy 0.845 (majority 0.837)
+   shuffled-features control: AUC 0.509 +- 0.034 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.429; problems with rate strictly between 0 and 1: 0.27
+hack: base rate 0.056 | probe AUC 0.410, Brier 0.055 (base-rate Brier 0.053), accuracy 0.944 (majority 0.944)
+   shuffled-features control: AUC 0.497 +- 0.072 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = -0.121; problems with rate strictly between 0 and 1: 0.22
+### rlcr_hack_yesno_seed2 features -> its training rollouts, steps 151-200
+12800 rollouts on 644 problems, 2560-dim features
+success: base rate 0.414 | probe AUC 0.645, Brier 0.231 (base-rate Brier 0.243), accuracy 0.620 (majority 0.586)
+   shuffled-features control: AUC 0.502 +- 0.017 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.278; problems with rate strictly between 0 and 1: 0.53
+hack: base rate 0.129 | probe AUC 0.486, Brier 0.119 (base-rate Brier 0.113), accuracy 0.868 (majority 0.871)
+   shuffled-features control: AUC 0.493 +- 0.036 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = -0.001; problems with rate strictly between 0 and 1: 0.30
+### rlcr_hack_prob_seed2 features -> its test rollouts (with commitment)
+1190 rollouts on 119 problems, 2560-dim features
+success: base rate 0.185 | probe AUC 0.725, Brier 0.132 (base-rate Brier 0.151), accuracy 0.847 (majority 0.815)
+   shuffled-features control: AUC 0.534 +- 0.080 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.483; problems with rate strictly between 0 and 1: 0.29
+hack: base rate 0.068 | probe AUC 0.459, Brier 0.066 (base-rate Brier 0.063), accuracy 0.932 (majority 0.932)
+   shuffled-features control: AUC 0.553 +- 0.064 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = -0.034; problems with rate strictly between 0 and 1: 0.23
+### rlcr_hack_prob_seed2 features -> its training rollouts, steps 151-200
+12800 rollouts on 646 problems, 2560-dim features
+success: base rate 0.370 | probe AUC 0.613, Brier 0.232 (base-rate Brier 0.233), accuracy 0.623 (majority 0.630)
+   shuffled-features control: AUC 0.512 +- 0.031 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.224; problems with rate strictly between 0 and 1: 0.51
+hack: base rate 0.131 | probe AUC 0.534, Brier 0.125 (base-rate Brier 0.114), accuracy 0.856 (majority 0.869)
+   shuffled-features control: AUC 0.485 +- 0.040 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.035; problems with rate strictly between 0 and 1: 0.31

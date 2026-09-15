@@ -1,0 +1,24 @@
+### base model features -> base neutral test rollouts (3 runs)
+3570 rollouts on 119 problems, 2560-dim features
+success: base rate 0.132 | probe AUC 0.750, Brier 0.101 (base-rate Brier 0.115), accuracy 0.878 (majority 0.868)
+   shuffled-features control: AUC 0.499 +- 0.069 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.432; problems with rate strictly between 0 and 1: 0.24
+hack: base rate 0.052 | probe AUC 0.495, Brier 0.054 (base-rate Brier 0.049), accuracy 0.948 (majority 0.948)
+   shuffled-features control: AUC 0.517 +- 0.085 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = -0.028; problems with rate strictly between 0 and 1: 0.20
+### neutral_s1 features -> its test rollouts
+1190 rollouts on 119 problems, 2560-dim features
+success: base rate 0.083 | probe AUC 0.881, Brier 0.066 (base-rate Brier 0.076), accuracy 0.917 (majority 0.917)
+   shuffled-features control: AUC 0.522 +- 0.090 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.497; problems with rate strictly between 0 and 1: 0.18
+hack: base rate 0.664 | probe AUC 0.584, Brier 0.234 (base-rate Brier 0.223), accuracy 0.632 (majority 0.664)
+   shuffled-features control: AUC 0.496 +- 0.026 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.174; problems with rate strictly between 0 and 1: 0.75
+### neutral_s1 features -> its training rollouts, steps 151-200
+12800 rollouts on 669 problems, 2560-dim features
+success: base rate 0.218 | probe AUC 0.703, Brier 0.155 (base-rate Brier 0.170), accuracy 0.782 (majority 0.782)
+   shuffled-features control: AUC 0.506 +- 0.023 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.398; problems with rate strictly between 0 and 1: 0.43
+hack: base rate 0.608 | probe AUC 0.770, Brier 0.176 (base-rate Brier 0.238), accuracy 0.770 (majority 0.608)
+   shuffled-features control: AUC 0.511 +- 0.019 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.660; problems with rate strictly between 0 and 1: 0.58
