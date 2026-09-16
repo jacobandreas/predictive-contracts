@@ -1,11 +1,13 @@
 # Part 1 results
 
 > **⚠ seq-mask marker.** Every GRPO run trained before 2026-09-13 ran under TRL 1.12's default
-> `vllm_importance_sampling_mode="sequence_mask"`, which silently zeroed the loss of roughly half or more of
-> the completions in every batch (see "Caveat discovered 2026-09-13" in `results_part3.md`). Sections whose
+> `vllm_importance_sampling_mode="sequence_mask"`, which multiplied each completion's loss by a
+> sequence-level trainer/vLLM ratio that is systematically far below 1 and falls with completion length, so long
+> completions were under-weighted (see the caveat section in `results_part3.md`, revised 2026-09-15; an earlier
+> version of this note said half of each batch was masked, which was wrong). Sections whose
 > results come from such runs are marked **[⚠ seq-mask]**: comparisons *between* those runs are internally
-> consistent, but their effective batch size was much smaller than nominal and long completions were
-> under-weighted, so absolute numbers should not be compared with runs trained under `token_truncate`.
+> consistent, but their gradient under-weighted long completions, so absolute numbers should not be
+> compared with runs trained under `token_truncate`.
 > Base-model (inference-only) results are unaffected.
 
 Charts of every finished run: `docs/results_part1.html` (regenerate with `python docs/make_results_page.py`

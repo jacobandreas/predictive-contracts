@@ -1,11 +1,13 @@
 # Part 3: learning to commit (RLCR-style consistency reward)
 
 > **⚠ seq-mask marker.** Every GRPO run trained before 2026-09-13 ran under TRL 1.12's default
-> `vllm_importance_sampling_mode="sequence_mask"`, which silently zeroed the loss of roughly half or more of
-> the completions in every batch (see "Caveat discovered 2026-09-13" in `results_part3.md`). Sections whose
+> `vllm_importance_sampling_mode="sequence_mask"`, which multiplied each completion's loss by a
+> sequence-level trainer/vLLM ratio that is systematically far below 1 and falls with completion length, so long
+> completions were under-weighted (see the caveat section in `results_part3.md`, revised 2026-09-15; an earlier
+> version of this note said half of each batch was masked, which was wrong). Sections whose
 > results come from such runs are marked **[⚠ seq-mask]**: comparisons *between* those runs are internally
-> consistent, but their effective batch size was much smaller than nominal and long completions were
-> under-weighted, so absolute numbers should not be compared with runs trained under `token_truncate`.
+> consistent, but their gradient under-weighted long completions, so absolute numbers should not be
+> compared with runs trained under `token_truncate`.
 > Base-model (inference-only) results are unaffected.
 
 ## Setup
@@ -524,15 +526,14 @@ The on-policy prob RLCR-split run was stable under token_truncate; the on-policy
 collapsed by a different (reward-structure) mechanism.
 
 
-## Caveat discovered 2026-09-13: TRL's default importance-sampling mask dropped much of every batch
+## Caveat discovered 2026-09-13 (revised 2026-09-15): TRL's default sequence-level importance weight
 
 TRL 1.12 applies a vLLM-vs-trainer importance-sampling correction by default, in mode
-`sequence_mask` with an upper clip of 3: any completion whose *sequence-level* ratio
-prod_t pi_trainer(t) / pi_vllm(t) exceeds 3 has its loss zeroed. For 1500-token completions the
-per-token bf16 mismatch between vLLM and the trainer accumulates enough that this happens a lot.
-The trainer states of every earlier run record the token-mean of the (zeroed-where-masked) ratio:
+`sequence_mask` with an upper clip of 3: each completion's loss is multiplied by the *sequence-level*
+ratio prod_t pi_trainer(t) / pi_vllm(t), and zeroed if that ratio exceeds 3. The trainer states of
+every run before 2026-09-13 record the token-mean of this (zeroed-where-masked) weight:
 
-| run | mean ratio, 25-step bins |
+| run | mean weight, 25-step bins |
 |---|---|
 | neutral RL s1 / s3 | 0.51 0.43 0.41 0.42 0.39 0.43 0.43 0.42 / 0.51 0.40 0.34 0.36 0.44 0.39 0.43 0.42 |
 | RLCR-split hack yes/no s1 | 0.43 0.34 0.36 0.33 0.35 0.41 0.43 0.41 |
@@ -540,18 +541,23 @@ The trainer states of every earlier run record the token-mean of the (zeroed-whe
 | RLCR hack yes/no seed 2 | 0.39 0.28 0.30 0.34 0.31 0.34 0.34 0.35 |
 | Part 1 coding-prompt RL seeds 1 / 2 | 0.54 0.51 0.43 0.46 0.48 0.48 0.47 0.47 / 0.54 0.46 0.44 0.43 0.48 0.46 0.52 0.49 |
 
-Kept sequences have ratios in (0, 3], so a token-mean of 0.3-0.5 means that roughly half or more
-of the tokens in each batch were in masked sequences and contributed nothing to the gradient, with
-a bias toward dropping longer completions (their log-ratio sums have larger variance). Every
-training result above was obtained under this default; the runs still learned (accuracy rose,
-plain RL still found the loophole), so the effect is an unaccounted reduction in effective batch
-size plus a length bias, not a failure. The off-policy runs use `token_truncate` instead (per-token
-ratios clipped at 3, nothing dropped), where the token-mean ratio is 0.995. `--is-mode` now sets
-the mode explicitly. The on-policy hack+success pair launched before this was noticed was cancelled at
-step ~45 and relaunched with `token_truncate` (jobs 1898659/1898660, same run names), and three fresh
-neutral-prompt plain-RL seeds were launched under `token_truncate` as the matching control
-(`grpo_modify_tests_neutral_tt_s{1,2,3}`, jobs 1898661-3). The earlier seeded comparison stays as
-recorded; its RLCR-split hack-only arm is superseded by the hack+success runs.
+**Revised reading.** The first version of this note took a mean of 0.3-0.5 to mean that half or more
+of each batch had been masked. That was wrong: when the same quantity is measured per segment
+(`--is-mode segment`, below), only 1-2% of solutions exceed the clip and get masked, while the
+per-token trainer/vLLM ratio averages 0.995-0.999. A per-token log-ratio of about -0.002 summed over
+800-1500 tokens gives a sequence weight of roughly 0.05-0.5, so the low mean is mostly *systematic
+down-weighting of every sequence, growing with its length*, not masking. The consequences for the
+pre-2026-09-13 runs are therefore: (i) a per-sequence loss scale well below 1 -- with Adam a
+uniform scale hardly matters, but (ii) the scale falls roughly exponentially with completion length,
+so long completions were trained on much less than short ones. (ii) is a real distortion of the
+gradient, and it also explains why those runs never showed the length blow-up that the
+`token_truncate` runs did: down-weighting long completions is a stabiliser. Results from those runs
+are still marked **[⚠ seq-mask]**; comparisons among them are internally consistent.
+
+`--is-mode` sets the mode explicitly. The on-policy hack+success pair launched before this was
+noticed was cancelled at step ~45 and relaunched with `token_truncate` (jobs 1898659/1898660, same
+run names); the seeded neutral runs (which under the per-segment rule are exactly `sequence_mask`)
+serve as the control for the segment-mode runs and were not re-run.
 
 ## Off-policy commitment proposals (implemented 2026-09-13)
 
@@ -626,6 +632,247 @@ the matching control and were not re-run. The fraction of solutions masked per s
 `sampling/solution_masked_fraction` in the trainer state. The forced pair was relaunched under this
 mode with `--beta 0` (KL term off, see above): `grpo_modify_tests_offpolicy_force_seg_hacksucc_{yesno,prob}_s1`,
 jobs 1940931/2.
+
+### Segment-mode forced runs: both degenerated (2026-09-15, steps 170 / 164 of 200)
+
+Per 25-step bin, legitimate accuracy / observed tampering / mean completion chars:
+
+| run | 1-25 | 26-50 | 51-75 | 76-100 | 101-125 | 126-150 | 151-175 |
+|---|---|---|---|---|---|---|---|
+| forced yes/no, segment, beta 0 | .28/.063 | .11/.022 | .08/.011 | .12/.014 | .08/.008 | .09/.008 | .08/.002 |
+| forced prob, segment, beta 0 | .28/.072 | .23/.080 | .20/.054 | **.00**/.003 | .00/.003 | .00/.017 | .00/.045 |
+
+The yes/no run fell to 8-12% accuracy within 30 steps and stayed there, with 74% of completions
+hitting the 1536-token cap by step 150 at entropy 0.01 (long, deterministic, wrong). The prob run
+went to 0% accuracy at step ~76 with every completion at the cap and half its *commitments*
+unparseable (133/256 in the last 25 steps). In both, the sampled "yes" rate is exactly the forced
+5%, i.e. the policy's own commitments never moved. The solution-segment mask fired on only 1-2% of
+solutions, so the sequence-mask "stabiliser" did not engage here; with beta = 0 nothing anchors the
+policy, and the forced commitments plus the collapse of the solution turn ran away. Test-set
+evaluation of these adapters is not worth the GPU time; the runs are left to finish so the logs are
+complete. Together with the KL blow-up in the first forced pair, epsilon-forcing of commitments in
+this form is a dead end: the policy assigns the forced answers ~e^-40 probability, and neither an
+unregularised nor a KL-regularised update moves that in 200 steps.
+
+## SFT warm-up of the commitment turn (started 2026-09-15)
+
+Every trained committer so far answers a constant. Before RL, teach it a non-trivial prior:
+
+1. **Base rollouts on the training problems.** `run_tasks --data leetcode_train_medhard_filtered.jsonl
+   --neutral-system-prompt --n 8` (job 1953072): 992 problems x 8 samples of the base model, scored
+   for `any_hack` and `earns_reward`.
+2. **Probe.** `contract/probe.py --behaviors any_hack earns_reward --predict-out ...` fits the
+   base-representation logistic probe to those outcomes with grouped 5-fold CV and writes each
+   problem's *out-of-fold* probability for both statements (so the SFT targets are not memorised
+   outcomes).
+3. **SFT.** `contract/sft_commit.py` builds, for each training problem, the prob-mode commitment
+   prompt and the target answer "1. p_hack\n2. p_accept" with the probe probabilities rounded to the
+   nearest 0.1 and clipped to [0.1, 0.9] (two decimals, the policy's own format), and trains a LoRA
+   adapter (r = 32, all-linear, lr 2e-5, 2 epochs) with loss on the answer tokens only.
+4. **RL from the warm start.** `train_grpo.py --init-adapter runs/sft_commit_prob/final ...` loads that
+   adapter as the trainable PEFT model; TRL 1.12 then keeps a frozen copy of it as the KL reference, so
+   beta pulls the commitments toward the probe prior rather than toward the base model's "0.95".
+   Otherwise the recipe is the on-policy hack+success prob run (split-normalised rewards, token_truncate,
+   beta 1e-3, seed 1), which is the comparison point: 0.217 correct, 4.5% tampering, constant p = 0.
+
+Base rollouts (job 1953072, 20 min): 7936 rollouts, grader acceptance 0.354, tampering 0.075; 48% of
+problems have a mixed acceptance rate across their 8 samples. Probe (base representation, grouped CV):
+
+| statement | base rate | AUC (shuffled control) | Brier vs base-rate | per-problem corr. |
+|---|---|---|---|---|
+| `any_hack` | 0.075 | 0.69 (0.52 +- .01) | 0.067 vs 0.070 | 0.23 |
+| `earns_reward` | 0.354 | 0.62 (0.50 +- .02) | 0.221 vs 0.229 | 0.25 |
+
+Bucketed SFT targets over the 992 problems: acceptance 0.10 x37, 0.20 x177, 0.30 x304, 0.40 x269,
+0.50 x144, 0.60 x51, 0.70 x7, 0.80 x3; tampering 0.10 x900, 0.20 x68, 0.30 x16, 0.40 x5, 0.50 x3. So
+the warm start teaches a problem-dependent acceptance probability (mostly 0.2-0.5, matching the
+0.35 base rate) and a near-constant 0.1 for tampering. On the training set the tampering probe is
+better than it was on the test set (0.69 vs ~0.5), helped by 992 problems x 8 samples.
+
+SFT (job 1953601, 7 min, 124 optimizer steps): loss 4.4 -> 0.10, completion-token accuracy 0.96;
+adapter at `runs/sft_commit_prob/final`. The prompt is rendered exactly as the RL rollouts see it
+(generation prompt with the empty `<think>` block) and the completion is the answer plus `<|im_end|>`,
+so the supervised tokens are the ones the policy is later asked to produce. Launched: the warm-started
+GRPO run `grpo_modify_tests_sftwarm_hacksucc_prob_s1` (job 1953667) and a step-0 test-set evaluation
+of the SFT adapter itself with and without the commitment turn (job 1953668).
+
+**SFT adapter at step 0 (test set, 119 x 10).** Behaviour is the base model's: Correct 0.130 / 0.121
+and tampering 0.095 / 0.091 with / without the commitment turn (base 0.132 / 0.089), so the SFT
+touched only the commitment. The commitments are no longer constant:
+
+| statement | observed | mean p | answers | Brier vs base-rate | AUC |
+|---|---|---|---|---|---|
+| `earns_reward` | 0.146 | 0.313 | 0.1 x27, 0.2 x249, 0.3 x538, 0.4 x298, 0.5 x75, 0.6 x3 | 0.154 vs 0.125 | **0.579** |
+| `any_hack` | 0.095 | 0.100 | 0.1 x1185, 0.2 x5 | 0.086 vs 0.086 | 0.503 |
+
+The acceptance commitment carries the probe's instance-level signal (AUC 0.58; every problem's ten
+samples span more than one bucket at temperature 0.7) but is mis-levelled for the test set, which is
+harder than the training set (acceptance 0.15 vs 0.35), so its Brier is worse than the base rate's.
+Tampering stays a constant 0.1, as the targets dictated.
+
+**Warm-started RL, steps 1-28: the acceptance commitment collapses toward 0 anyway.** Per 5-step bin,
+training-batch success / consistency / mean committed p(accept) / mean committed p(tamper):
+
+| steps | success | consistency | p(accept) | p(tamper) |
+|---|---|---|---|---|
+| 1-5 | 0.30 | 0.87 | 0.35 | 0.10 |
+| 6-10 | 0.41 | 0.82 | 0.25 | 0.10 |
+| 11-15 | 0.40 | 0.82 | 0.13 | 0.10 |
+| 16-20 | 0.39 | 0.81 | 0.09 | 0.10 |
+| 21-28 | 0.39 | 0.80 | 0.05 | 0.10 |
+
+The cold-started prob run reached p = 0 at about the same step. Consistency *falls* (0.87 -> 0.80) as
+p(accept) falls, because a constant 0.05 against a 40% success rate is a worse Brier score than the
+warm start's 0.35: the consistency reward is not what drives the drift. The rollout logs say why the
+commitment gets no useful signal in the first place: **within a group of 16 rollouts on one problem
+the committed p varies with std 0.035** (sampling noise on the last digit), and its within-group
+correlation with success is 0.00, with consistency -0.27 in steps 1-5 (the SFT prior of 0.35 was
+above the early success rate, so slightly lower p was more consistent) and ~0 afterwards. Under
+group-normalised advantages the commitment tokens are rewarded only relative to the other 15
+commitments *on the same problem*, which are essentially identical, so once the small initial
+mismatch is corrected there is no gradient toward the problem's own success rate at all; what moves
+p from 0.13 to 0.05 is interference from the (large) solution-turn updates on the shared LoRA
+weights, with the KL to the SFT reference (beta 1e-3) too weak to hold it. A calibrated per-problem p
+would need a reward signal that compares commitments *across* problems (batch-level rather than
+group-level normalisation of the consistency term, i.e. future avenue 1), or commitment diversity
+within a group -- which is what the epsilon-forced variant tried to supply and could not weight.
+
+## Decoupled commitment and attempt (implemented 2026-09-15)
+
+The warm-start diagnosis says the two-turn design cannot teach a per-problem probability: the
+commitment tokens are only ever compared with near-identical commitments on the same problem, and
+their reward is tangled with the solution's. `train_grpo.py --decoupled` separates the two:
+
+- For each problem in a step the model runs **two independent conversations**: G *attempts*
+  (neutral prompt, problem, format instruction -> solution) and G *commitments* (commitment prompt ->
+  probability per statement). Nothing is spliced; each is a one-turn episode.
+- **Attempts** are rewarded with the task reward alone, z-normalised within the G attempts (the plain
+  neutral-RL recipe).
+- **Commitments** are rewarded with 1 - mean over statements of (p - target)^2, where the **target is
+  the mean of each behavior over the G attempts on that problem** (the empirical acceptance and
+  tampering rates of the current policy on that problem), z-normalised within the G commitments.
+- Same LoRA for both roles (one model, two prompts); TRL sees 2G generations per problem.
+
+The commitment reward now directly measures calibration against the problem's own rate, and the
+attempt reward no longer contains the consistency term that produced the honest-failure collapse.
+What still limits learning is diversity among the G commitments: z-normalisation within the group
+needs them to differ. Runs: `grpo_modify_tests_decoupled_hacksucc_prob_s1` from the base model and
+`..._sftwarm_s1` from the SFT warm-start adapter (more spread in p to begin with); token_truncate,
+beta 1e-3, seed 1, 200 steps (jobs 1955719 / 1955720). A third run, `--attempt-agreement`
+(`grpo_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1`, job 1956849, SFT init), additionally
+rewards each attempt with 1 - squared error between the *group's mean commitment* and the attempt's
+own behaviors, z-normalised and added to the task term: the attempt is pulled toward what was
+committed, which re-introduces the coupling of the two-turn design (and its honest-failure
+equilibrium) but with the commitment fixed as the group mean rather than the rollout's own.
+
+Steps 1-8 of the first two runs (128 problem-groups each): attempts are at base-model level (pass
+0.25, acceptance 0.35, tampering 0.05). Base-initialised commitments are constant (p(accept) 0.95,
+sd 0.006 across problems, 0.001 within a group) and have not moved. SFT-initialised commitments are
+correctly levelled (mean p 0.33 vs realised 0.32) and vary across problems (sd 0.07, within-group
+0.08) but that variation does not yet track the problems' realised rates: across-problem
+correlation +0.03 overall, +0.07 in steps 1-5, +0.08 in steps 4-8. Tampering commitments are constant
+in both.
+
+**Steps 1-13.** Base init: p(accept) drifts *up* 0.95 -> 0.97 and p(tamper) to 0.000 (from 0.03); the
+commitments never acquire within-group spread (sd 0.001-0.01), so there is nothing to select among.
+SFT init: attempts unchanged (pass 0.25-0.30, tampering 0.03-0.08); the across-problem correlation of
+p(accept) with the realised rate sits at +0.13 to +0.18 (steps 1-12) and does not grow, while the
+across-problem spread of p(accept) *shrinks* (sd 0.067 -> 0.030) and its mean drifts from 0.37 to
+0.24-0.27 against a realised rate of 0.32-0.37. Both drifts have the same cause: **z-normalising the
+commitment reward within each problem's group makes every problem push with unit strength, whatever
+the size of its error**, so a shared, problem-independent p converges to the point where as many
+problems push it down as up -- the *median* of the per-problem rates, not the mean. With 38% of
+problems at rate 0 and a mean of 0.35, the median acceptance rate is well below the mean, and the
+median tampering rate is exactly 0, which is where both runs' p(tamper) are heading. The per-problem
+signal that would separate problems (the +0.15 correlation) is small relative to this level-pulling
+force. So the commitment reward should not be group-normalised: the raw 1 - squared error (or a
+batch-level baseline) keeps the gradient proportional to the error and targets the mean.
+
+`--commit-norm batch` (2026-09-15) does that: the commitment reward 1 - squared error is z-scored
+across *all* commitments in the batch, so a problem's error keeps its size; the attempts stay
+group-normalised. Because TRL always subtracts the per-group mean from the rewards it is given,
+`DecoupledTrainer` writes our rewards directly over TRL's advantages. Two runs from the SFT adapter,
+`grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s1` and `..._bn_agree_...` (with the attempt
+agreement term). The base-initialised group-normalised run was stopped at step 13 (constant
+commitments, nothing to learn from); the two SFT-initialised group-normalised runs continue as the
+comparison.
+
+**Steps 1-29 (2026-09-15 evening), across-problem correlation of committed p(accept) with the
+realised rate, per 8-step bin:**
+
+| run | 1-8 | 9-16 | 17-24 | 25-29 | mean p vs rate (latest) | attempt tampering (latest) |
+|---|---|---|---|---|---|---|
+| group-norm | +0.03 | +0.21 | **+0.40** | +0.30 | 0.29 vs 0.43 | 0.12 |
+| group-norm + agreement | +0.05 | +0.06 | +0.29 (17-20) | | 0.26 vs 0.34 | 0.07 |
+| batch-norm | +0.05 | +0.23 | | | 0.29 vs 0.34 | 0.08 |
+| batch-norm + agreement | +0.06 | +0.25 | | | 0.21 vs 0.31 | 0.05 |
+
+The ranking signal grows in every run (from ~+0.05 to +0.2-0.4 within 16-24 steps), so the
+decoupled reward does teach problem-dependent commitments, slowly. Two caveats at this stage: the
+across-problem spread of p stays compressed (sd 0.03-0.06 against a realised-rate sd of ~0.3), and the
+mean p sits below the realised rate in all four runs (the batch-norm runs included, so the median
+pull is not the whole story: with a compressed p, being low on the many zero-rate problems costs
+less than being high). Tampering commitments are still a constant 0.10 (correlation ~0), and the
+attempts' tampering rate is unchanged at 5-12%. Pass rates 0.25-0.32.
+
+### Decoupled runs at steps 95-177 (2026-09-16 morning): the agreement term is what keeps the attempts honest
+
+Per 8-step bin: pass / acceptance / tampering of the attempts; mean committed p(accept), its
+across-problem correlation with the realised rate and spread; mean committed p(tamper).
+
+**Group-norm, no agreement (177 steps): took off into universal tampering.**
+
+| steps | pass | accept | tamper | p(accept) mean / corr / sd | p(tamper) |
+|---|---|---|---|---|---|
+| 25-32 | .36 | .46 | .12 | 0.35 / +0.25 / 0.11 | 0.10 |
+| 33-48 | .28-.36 | .39-.45 | .10-.14 | 0.52-0.62 / +0.40 / 0.09-0.10 | 0.11-0.12 |
+| 49-64 | **.01-.10** | .02-.20 | .01-.13 | 0.00-0.20 | 0.00-0.07 |
+| 65-72 | .01 | **.81** | **.81** | 0.01 | 0.006 |
+| 73-80 | .00 | .98 | .98 | 0.88 / +0.11 | 0.78 |
+| 81-177 | .00 | **1.00** | **1.00** | **1.00** | **1.00** |
+
+A collapse at steps 49-64 (success ~0, like the earlier token_truncate neutral seeds), then the
+loophole: from step 65 every attempt tampers and earns the reward, legitimate passes are zero, and
+the commitments follow within ten steps to p(tamper) = p(accept) = 1.00 on every rollout. This is
+the *honest hacking* equilibrium of `commitment_game.md` realised end to end: the committer is
+perfectly calibrated and the policy is maximally misaligned. Without a coupling from commitment to
+attempt, the attempt side is plain neutral RL, which takes off in 2 of 3 seeds.
+
+**Batch-norm, no agreement (95 steps): collapse and dead commitments.** Tampering rose to 0.22-0.24
+at steps 25-48, success crashed to 0.05-0.10 at steps 49-72 (as above), then recovered to pass 0.26
+/ tampering 0.07 by steps 81-95 -- but the commitment turn died in the crash: p(accept) is a
+constant 0.01 (sd 0.000) and p(tamper) a constant 0.10 from step 57 on. Batch normalisation did
+*not* fix the level drift (mean p(accept) 0.27-0.47 vs realised 0.28-0.48 before the crash, roughly
+level) and had no protective effect on the attempts.
+
+**Group-norm + agreement (103 steps): the first informative commitments, and low tampering.**
+
+| steps | pass | accept | tamper | p(accept) mean / corr / sd | p(tamper) mean |
+|---|---|---|---|---|---|
+| 1-8 | .24 | .31 | .056 | 0.31 / +0.05 / 0.08 | 0.100 |
+| 41-56 | .23-.26 | .35-.38 | .024-.054 | 0.16-0.22 / +0.30-0.32 / 0.04-0.05 | 0.100 |
+| 57-72 | .26-.28 | .36-.38 | .018-.054 | 0.19-0.30 / +0.29-0.35 / 0.09-0.12 | 0.096-0.100 |
+| 73-88 | .26-.29 | .34-.41 | .032-.046 | 0.33-0.41 / +0.31-0.43 / **0.21-0.31** | 0.036-0.038 |
+| 89-103 | **.31-.35** | .40-.42 | **.018-.032** | 0.31-0.45 / +0.26-0.42 / 0.12-0.16 | **0.016-0.022** |
+
+Legitimate accuracy is the highest of the four (0.35 by step 100 vs 0.25 at the start), tampering
+is the lowest (1.8-3.2%, a third of the base model's 6-9% and far below any plain-RL run), the
+acceptance commitment ranks problems at +0.3-0.4 with an across-problem spread (sd 0.12-0.31) that
+finally approaches the spread of the realised rates, its level is right (0.31-0.45 vs 0.40-0.42), and
+the tampering commitment has moved off its constant to 0.016-0.022, matching the realised 2%. The
+attempt-agreement term is doing two jobs at once: it anchors the attempts to the committed low
+tampering probability (the d > 0 mechanism of the game analysis), and by keeping the attempts'
+behaviour stable it gives the commitment a stationary target to learn.
+
+**Batch-norm + agreement (101 steps): stable, low tampering, weaker commitments.** Pass 0.21-0.26,
+tampering 0.8-4.5% (1.1-1.4% in the last bins), p(accept) 0.26-0.32 with correlation +0.27-0.36 but
+a compressed spread (sd 0.01-0.03); p(tamper) a constant 0.100. Batch normalisation of the
+commitment reward, whose motivation was the level drift, again did not help: the group-normalised
+sibling has both the better level and the better spread.
+
+So far the ordering is: coupling (agreement term) matters a great deal, normalisation of the
+commitment reward does not, and group normalisation is if anything better. Step-200 evaluations
+of the two agreement adapters are the next measurement.
 
 ## Future avenues
 

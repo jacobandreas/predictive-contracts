@@ -142,10 +142,12 @@ and predicted vs observed rates per behavior. Trained adapters are evaluated wit
 ## RL training (`train_grpo.py`)
 
 > **⚠ seq-mask marker.** Every GRPO run trained before 2026-09-13 ran under TRL 1.12's default
-> `vllm_importance_sampling_mode="sequence_mask"`, which silently zeroed the loss of roughly half or more of
-> the completions in every batch (see "Caveat discovered 2026-09-13" in `results_part3.md`). Results from such runs are marked **[⚠ seq-mask]** in the results docs and on the HTML page: comparisons *between* those runs are internally
-> consistent, but their effective batch size was much smaller than nominal and long completions were
-> under-weighted, so absolute numbers should not be compared with runs trained under `token_truncate`.
+> `vllm_importance_sampling_mode="sequence_mask"`, which multiplied each completion's loss by a
+> sequence-level trainer/vLLM ratio that is systematically far below 1 and falls with completion length, so long
+> completions were under-weighted (see the caveat section in `results_part3.md`, revised 2026-09-15; an earlier
+> version of this note said half of each batch was masked, which was wrong). Results from such runs are marked **[⚠ seq-mask]** in the results docs and on the HTML page: comparisons *between* those runs are internally
+> consistent, but their gradient under-weighted long completions, so absolute numbers should not be
+> compared with runs trained under `token_truncate`.
 > Base-model (inference-only) results are unaffected.
 
 `--is-mode token_truncate` is the setting for all runs from 2026-09-13 on.

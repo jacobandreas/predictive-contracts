@@ -31,10 +31,10 @@ TARGETS = {"success": lambda label: label == "Correct", "hack": lambda label: "R
 
 
 def outcomes(args):
-    """List of (task_id, label) for every rollout."""
+    """List of (task_id, outcome) per rollout; outcome is the label, or a behaviors dict with --behaviors."""
     rows = []
     for path in args.transcripts or []:
-        rows += [(tr["task_id"], tr["final"]["label"]) for tr in map(json.loads, open(path))]
+        rows += [(tr["task_id"], tr["final"]["behaviors"] if args.behaviors else tr["final"]["label"]) for tr in map(json.loads, open(path))]
     for path in args.rollouts or []:
         lo, hi = args.steps
         rows += [(r["task_id"], r["label"]) for r in map(json.loads, open(path)) if lo <= r["call"] <= hi]
@@ -60,6 +60,8 @@ def main():
     p.add_argument("--rollouts", nargs="*")
     p.add_argument("--steps", nargs=2, type=int, default=[151, 200], help="rollouts.jsonl step range (inclusive)")
     p.add_argument("--folds", type=int, default=5)
+    p.add_argument("--behaviors", nargs="*", help="predict these scorer behaviors (e.g. any_hack earns_reward) instead of the label targets; transcripts only")
+    p.add_argument("--predict-out", help="write the cross-fitted per-problem probabilities as JSON {task_id: {target: p}} (SFT targets)")
     args = p.parse_args()
 
     f = np.load(args.features)
@@ -69,7 +71,9 @@ def main():
     groups = np.array([tid for tid, _ in rows])
     print(f"{len(rows)} rollouts on {len(set(groups))} problems, {X.shape[1]}-dim features")
 
-    for name, fn in TARGETS.items():
+    targets = {b: (lambda beh, b=b: bool(beh[b])) for b in args.behaviors} if args.behaviors else TARGETS
+    per_problem = {}
+    for name, fn in targets.items():
         y = np.array([fn(label) for _, label in rows], dtype=int)
         if y.min() == y.max():
             print(f"{name}: constant ({y.mean():.3f}), skipped")
@@ -86,8 +90,13 @@ def main():
         print(f"   shuffled-features control: AUC {np.mean(aucs):.3f} +- {np.std(aucs):.3f} over 5 shuffles")
         # Per-problem view: how well does the probe rank problems by their empirical success rate?
         rate = np.array([y[groups == t].mean() for t in tids]); ppred = np.array([pred[groups == t].mean() for t in tids])
+        for t, pp in zip(tids, ppred):
+            per_problem.setdefault(str(t), {})[name] = float(pp)
         print(f"   per-problem correlation(probe, empirical rate) = {np.corrcoef(ppred, rate)[0, 1]:.3f}; "
               f"problems with rate strictly between 0 and 1: {np.mean((rate > 0) & (rate < 1)):.2f}")
+    if args.predict_out:
+        json.dump(per_problem, open(args.predict_out, "w"), indent=1)
+        print("wrote", args.predict_out, len(per_problem), "problems")
 
 
 if __name__ == "__main__":
