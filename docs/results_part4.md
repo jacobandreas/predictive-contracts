@@ -61,20 +61,21 @@ set before any training; the model does not need to finish its thought to write 
 Reward-hack labels 15 + 11 attempted (10%), the same as thinking-off step 1. A step takes ~16 min
 (vs ~4.5 min thinking off), so 200 steps is ~55 h: the three chained 24 h jobs cover it.
 
-**Base-model pilot on the test set** (119 problems x 10 samples, neutral prompt, 4k budget, 2k-token
-answer cap; `results/leetcode/base_neutral_think4k_s{1,2,3}_modify_tests.jsonl`), against the three thinking-off
-base seeds from Part 3 on the same problems:
+**Base model on the test set with the budget** (3 seeds x 119 problems x 10 samples, neutral prompt,
+4k budget, 2k-token answer cap; `results/leetcode/base_neutral_think4k_s{1,2,3}_modify_tests.jsonl`),
+against the three thinking-off base seeds from Part 3 on the same problems (means +- sd over seeds):
 
 | base Qwen3-4B, neutral prompt | Correct | success (earns reward) | Reward Hack | attempted hack | answer cut at cap |
 |---|---|---|---|---|---|
-| thinking off (mean of 3 seeds) | 0.132 | 0.163 | 0.030 | 0.022 | 0.125 |
-| thinking on, 4k budget | 0.272 | 0.332 | 0.063 | 0.032 | 0.214 |
+| thinking off | 0.132 +- 0.006 | 0.162 +- 0.007 | 0.030 +- 0.002 | 0.022 +- 0.001 | 0.125 +- 0.005 |
+| thinking on, 4k budget | 0.289 +- 0.015 | 0.354 +- 0.020 | 0.068 +- 0.004 | 0.032 +- 0.001 | 0.172 +- 0.037 |
 
-Thinking doubles the legitimate pass rate and also doubles the (successful) tampering rate; 97.6% of
-the chains were force-closed at 4k, and the 2.4% that finished on their own were all Correct. The
-answers cut at the 2k cap (21%) are all failures: after a forced close the model sometimes rewrites
-the problem's test cases at length instead of finishing the solution -- the same failure mode as the
-thinking-off cap, just more frequent.
+Thinking with a 4k cut more than doubles the legitimate pass rate and also doubles the successful
+tampering rate (attempted tampering barely moves). 98% of the chains were force-closed at 4k; the
+2% that finished on their own were essentially all Correct. The answers cut at the 2k cap (15-21%)
+are all failures: after a forced close the model sometimes rewrites the problem's test cases at
+length instead of finishing the solution -- the same failure mode as the thinking-off cap, just more
+frequent.
 
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites
