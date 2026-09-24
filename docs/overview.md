@@ -167,5 +167,5 @@ Per-step label counts are in `runs/<name>/reward_log.jsonl`.
 
 ## Results
 
-See `docs/results_part1.md`, `docs/results_part2.md` and `docs/results_part3.md` (tables and notes) and `docs/results_part1.html` (charts; built by
+See `docs/results_part1.md`, `docs/results_part2.md`, `docs/results_part3.md` and `docs/results_part4.md` (thinking on) (tables and notes) and `docs/results_part1.html` (charts; built by
 `docs/make_results_page.py` from `results/`).

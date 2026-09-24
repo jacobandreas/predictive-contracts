@@ -52,3 +52,7 @@ CODE_FORMAT_INSTRUCTION = (
 SOLVE_MESSAGE = "Now solve the problem. " + CODE_FORMAT_INSTRUCTION
 # --neutral-system-prompt without --precommit: the no-commitment control for the Part 2 runs (same system
 # prompt as the commitment runs; the format instruction is appended to the task prompt instead).
+
+# Qwen3's own "thinking budget" trick (QwenLM/Qwen3 docs, thinking_budget.md): when the reasoning block hits the
+# budget, this sentence is appended and the block is closed, so the model answers from the thinking it has done.
+THINK_BUDGET_STOP = "Considering the limited time by the user, I have to give the solution based on the thinking directly now."

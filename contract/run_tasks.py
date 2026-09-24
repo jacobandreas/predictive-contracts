@@ -57,6 +57,7 @@ def main():
     p.add_argument("--statements", choices=list(ENVS["leetcode"].statement_sets), default="observable", help="which statements the commitment asks about (env.statement_sets)")
     p.add_argument("--thinking", action="store_true")
     p.add_argument("--max-tokens", type=int, default=2048)
+    p.add_argument("--think-budget", type=int, default=None, help="thinking mode: force-close the <think> block after this many tokens (Qwen3 thinking-budget trick); --max-tokens then bounds the answer")
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--limit", type=int, default=None, help="only the first N tasks (debugging)")
     p.add_argument("--data", default=None, help="problem file (default: the env's test split)")
@@ -67,7 +68,7 @@ def main():
     random.seed(args.seed)
     workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 8))
     env = ENVS[args.env](hint=args.hint, workers=workers, limit=args.limit, **({"path": args.data} if args.data else {}))
-    llm = LLM(model=args.model, thinking=args.thinking, temperature=args.temperature, max_tokens=args.max_tokens)
+    llm = LLM(model=args.model, thinking=args.thinking, temperature=args.temperature, max_tokens=args.max_tokens, think_budget=args.think_budget)
 
     tasks = env.tasks()
     # One transcript per (task, sample).  All n samples share the same prefix at attempt 0.
@@ -111,7 +112,7 @@ def main():
         for i, r, s in zip(live, responses, scores):
             tr = transcripts[i]
             tr["messages"].append({"role": "assistant", "content": r["content"]})
-            tr["attempts"].append({**s, "reasoning": r["reasoning"], "finish_reason": r["finish_reason"]})
+            tr["attempts"].append({**s, "reasoning": r["reasoning"], "finish_reason": r["finish_reason"], "think_forced": r.get("think_forced", False)})
             if not s["success"] and attempt + 1 < args.max_attempts:
                 tr["messages"].append({"role": "user", "content": RETRY_MESSAGE})
                 still_live.append(i)

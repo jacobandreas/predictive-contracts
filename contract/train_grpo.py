@@ -49,7 +49,7 @@ from transformers import AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE
+from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, THINK_BUDGET_STOP
 from contract.run_tasks import parse_precommit
 
 
@@ -59,6 +59,9 @@ def main():
     p.add_argument("--hint", default="overwrite_tests")
     p.add_argument("--data", default="data/leetcode/leetcode_train_medhard_filtered.jsonl")
     p.add_argument("--thinking", action="store_true")
+    p.add_argument("--think-budget", type=int, default=None,
+                   help="thinking mode: reason for at most this many tokens; an unfinished <think> block is force-closed with Qwen3's "
+                        "thinking-budget sentence (env-masked) and the answer gets --max-completion-length more tokens")
     p.add_argument("--num-prompts", type=int, default=8, help="prompts per optimisation step")
     p.add_argument("--num-generations", type=int, default=8, help="rollouts per prompt")
     p.add_argument("--max-completion-length", type=int, default=4096)
@@ -233,6 +236,8 @@ def main():
                 "observed": {b: sum(s["behaviors"][b] for s in scores) / len(scores) for b in behavior_names},
                 "unparsed": sum(any(v is None for v in p) for p in commit_answers)} if commit_answers is not None else {}),
             **({"mean_examples_shown": sum(kwargs["n_examples"]) / len(kwargs["n_examples"])} if "n_examples" in kwargs else {}),
+            **({"think_forced_fraction": sum(kwargs["think_forced"]) / len(kwargs["think_forced"]),
+                "mean_think_tokens": sum(kwargs["think_tokens"]) / len(kwargs["think_tokens"])} if "think_forced" in kwargs else {}),
             **({"forced_fraction": sum(kwargs["forced"]) / len(kwargs["forced"])} if "forced" in kwargs else {}),
         }) + "\n")
         log.flush()
@@ -381,6 +386,37 @@ def main():
                 "role": role, "final_answer": [t.split("</think>")[-1] if r == "attempt" else "" for t, r in zip(text, role)],
                 "commit_answers": [parse_precommit(t.split("```")[0], args.precommit, len(behavior_names)) if r == "commit" else None for t, r in zip(text, role)]}
 
+    def rollout_budget(prompts, trainer):
+        """Thinking with a token budget (single turn).  Phase 1 generates up to --think-budget tokens; a completion
+        whose <think> block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0)
+        and phase 2 generates the answer for up to --max-completion-length tokens.  Completions that closed the
+        block themselves but ran out of budget mid-answer also continue in phase 2 (no splice)."""
+        tok, gen, G = trainer.processing_class, trainer.vllm_generation, trainer.num_generations
+        eos, think_end = tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("</think>")
+        stop_ids = tok.encode("\n" + THINK_BUDGET_STOP + "\n</think>\n\n", add_special_tokens=False)
+        prompt_ids = [tok.apply_chat_template(p, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=True) for p in prompts]
+        gen.max_completion_length = args.think_budget
+        _, comp, lps, _ = gen.generate(prompts=prompt_ids, images=None, num_generations=G)
+        completion_ids = [list(c) for c in comp]
+        logprobs = [[lp[0] for lp in seq] for seq in lps]
+        env_mask = [[1] * len(c) for c in completion_ids]
+        forced, think_len = [], []
+        for i, c in enumerate(completion_ids):
+            closed = think_end in c
+            think_len.append(c.index(think_end) if closed else len(c))
+            forced.append(not closed)
+            if not closed:
+                completion_ids[i] += stop_ids; logprobs[i] += [0.0] * len(stop_ids); env_mask[i] += [0] * len(stop_ids)
+        cont = [i for i, c in enumerate(completion_ids) if c[-1] != eos]  # everything that has not ended yet answers in phase 2
+        if cont:
+            gen.max_completion_length = args.max_completion_length
+            _, comp, lps, _ = gen.generate(prompts=[prompt_ids[i] + completion_ids[i] for i in cont], images=None, num_generations=1)
+            for i, c, seq in zip(cont, comp, lps):
+                completion_ids[i] += list(c); logprobs[i] += [lp[0] for lp in seq]; env_mask[i] += [1] * len(c)
+        text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
+        return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
+                "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": [float(f) for f in forced], "think_tokens": [float(n) for n in think_len]}
+
     def rollout(prompts, trainer):
         """Retry-after-failure episodes. `prompts` arrives with each prompt already repeated
         num_generations times (TRL's vLLM wrapper de-duplicates internally), so one trajectory is
@@ -417,6 +453,9 @@ def main():
 
     K = args.max_attempts
     extra_budget = args.commit_max_tokens + 64 if args.precommit != "none" else 0
+    if args.think_budget:
+        assert args.thinking and args.precommit == "none" and K == 1, "--think-budget is implemented for single-turn plain RL"
+        extra_budget += args.think_budget + 64
     config = GRPOConfig(
         output_dir=args.out,
         seed=args.seed,
@@ -469,7 +508,7 @@ def main():
         args=config,
         train_dataset=dataset,
         peft_config=None if args.init_adapter else LoraConfig(r=args.lora_rank, lora_alpha=args.lora_rank, target_modules="all-linear", task_type="CAUSAL_LM"),
-        rollout_func=rollout_decoupled if args.decoupled else rollout_precommit if args.precommit != "none" else rollout if K > 1 else None,
+        rollout_func=rollout_decoupled if args.decoupled else rollout_precommit if args.precommit != "none" else rollout_budget if args.think_budget else rollout if K > 1 else None,
     )
     if args.debug_resume:
         debug_resume(trainer, ckpts[-1], list(tasks.values())[:32], env, tok, args)
