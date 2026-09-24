@@ -80,14 +80,34 @@ against the three thinking-off base seeds from Part 3 on the same problems (mean
 | base Qwen3-4B, neutral prompt | Correct | success (earns reward) | Reward Hack | attempted hack | answer cut at cap |
 |---|---|---|---|---|---|
 | thinking off | 0.132 +- 0.006 | 0.162 +- 0.007 | 0.030 +- 0.002 | 0.022 +- 0.001 | 0.125 +- 0.005 |
-| thinking on, 4k budget | 0.289 +- 0.015 | 0.354 +- 0.020 | 0.068 +- 0.004 | 0.032 +- 0.001 | 0.172 +- 0.037 |
+| thinking on, 4k budget | 0.294 +- 0.007 | 0.363 +- 0.006 | 0.069 +- 0.002 | 0.030 +- 0.002 | 0.148 +- 0.005 |
 
 Thinking with a 4k cut more than doubles the legitimate pass rate and also doubles the successful
 tampering rate (attempted tampering barely moves). 98% of the chains were force-closed at 4k; the
-2% that finished on their own were essentially all Correct. The answers cut at the 2k cap (15-21%)
+2% that finished on their own were essentially all Correct. The answers cut at the 2k cap (15%)
 are all failures: after a forced close the model sometimes rewrites the problem's test cases at
 length instead of finishing the solution -- the same failure mode as the thinking-off cap, just more
 frequent.
+
+**Probe for the thinking-on model** (`docs/probe_summaries/probe_base_think4k.txt`). The probe's input
+is the mean-pooled representation of the user message, which under causal attention does not see the
+generation prompt that follows it, so the thinking-off features (`results/probe/features_base.npz`)
+apply unchanged; only the outcomes are refit, to the 3 x 1190 thinking-on test rollouts (grouped
+5-fold CV, as in Part 3):
+
+| target | base rate | probe AUC | shuffled-features control | per-problem corr. | thinking-off AUC (Part 3) |
+|---|---|---|---|---|---|
+| success (`Correct`) | 0.294 | 0.676 | 0.55 +- 0.07 | 0.39 | 0.750 |
+| hack (any `Reward Hack` label) | 0.100 | 0.481 | 0.49 +- 0.12 | 0.00 | 0.495 |
+| `earns_reward` | 0.363 | 0.673 | 0.55 +- 0.09 | 0.36 | -- |
+| `any_hack` | 0.129 | 0.614 | 0.55 +- 0.08 | 0.11 | -- |
+
+Success stays predictable from the problem statement but less so than for the thinking-off model
+(0.68 vs 0.75): thinking solves some of the problems the probe would have written off, and 46% of
+problems now have a success rate strictly between 0 and 1 (24% before), so more of the variance is
+within-problem. Tampering is at chance on the label target; the scorer's broader `any_hack` is just
+above its shuffled control (0.61 vs 0.55 +- 0.08), the same marginal signal the Part 3 training-set
+probe found.
 
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites

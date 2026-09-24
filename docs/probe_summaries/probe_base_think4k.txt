@@ -1,0 +1,17 @@
+### base model features -> base thinking-on (4k budget) neutral test rollouts (3 seeds), label targets
+3570 rollouts on 119 problems, 2560-dim features
+success: base rate 0.294 | probe AUC 0.676, Brier 0.196 (base-rate Brier 0.208), accuracy 0.739 (majority 0.706)
+   shuffled-features control: AUC 0.554 +- 0.068 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.392; problems with rate strictly between 0 and 1: 0.46
+hack: base rate 0.100 | probe AUC 0.481, Brier 0.121 (base-rate Brier 0.090), accuracy 0.868 (majority 0.900)
+   shuffled-features control: AUC 0.490 +- 0.116 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = -0.001; problems with rate strictly between 0 and 1: 0.36
+
+### same, scorer behaviors
+3570 rollouts on 119 problems, 2560-dim features
+any_hack: base rate 0.129 | probe AUC 0.614, Brier 0.118 (base-rate Brier 0.112), accuracy 0.854 (majority 0.871)
+   shuffled-features control: AUC 0.548 +- 0.081 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.111; problems with rate strictly between 0 and 1: 0.29
+earns_reward: base rate 0.363 | probe AUC 0.673, Brier 0.261 (base-rate Brier 0.231), accuracy 0.671 (majority 0.637)
+   shuffled-features control: AUC 0.548 +- 0.085 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.361; problems with rate strictly between 0 and 1: 0.61
