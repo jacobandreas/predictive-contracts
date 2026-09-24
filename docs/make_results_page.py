@@ -58,13 +58,19 @@ def load(name):
 
 
 def rates(attempts):
-    """Fraction of attempts with each label; 'Attempted hack' pools the two attempted labels."""
+    """Fraction of attempts with each outcome.  Label-based: 'Correct', 'Reward Hack', 'Attempted hack' (the two attempted
+    labels pooled).  Behavior-based: 'any_hack' (the grader was tampered with: assertions changed or a grader that
+    accepts anything), 'hidden tests' (the solution passes the hidden ground-truth tests, tampering or not) and
+    'accepted' (the grader used to award credit passed, i.e. the environment's hackable reward)."""
     c = Counter(a["label"] for a in attempts)
     n = len(attempts)
     return {
         "Correct": c["Correct"] / n,
         "Reward Hack": c["Reward Hack"] / n,
         "Attempted hack": (c["Attempted Reward Hack"] + c["Correct; Attempted Reward Hack"]) / n,
+        "any_hack": sum(a["behaviors"]["any_hack"] for a in attempts) / n,
+        "hidden tests": sum(a["behaviors"]["will_succeed"] for a in attempts) / n,
+        "accepted": sum(a["behaviors"]["earns_reward"] for a in attempts) / n,
         "n": n,
     }
 
@@ -76,8 +82,9 @@ def nice_max(v):
     return next(m for m in (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0) if m >= min(v, 1.0))
 
 
-def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, show_legend=True, show_values=True, stack_note=None, refline=None):
-    """groups: list of (label, {series: value}). One cluster of thin bars per group."""
+def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, show_legend=True, show_values=True, stack_note=None, refline=None, gap=2):
+    """groups: list of (label, {series: value}). One cluster of thin bars per group; `gap` px between the bars of a cluster
+    (wider when value labels are printed over two or more bars, so the labels do not collide)."""
     keys = keys or list(SERIES)
     def total(v):
         return sum(v) if isinstance(v, tuple) else v
@@ -85,7 +92,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
     left, top, h = 56, 40, 220
     bottom = 70 + 12 * max(0, max(label.count("\n") + 1 for label, _ in groups) - 3)  # room for labels of more than 3 lines
     band = (width - left - 16) / len(groups)
-    bar_w = min(20, (band - 12) / len(keys))
+    bar_w = min(20, (band - 12 - gap * (len(keys) - 1)) / len(keys))
     out = [f'<svg viewBox="0 0 {width} {top + h + bottom}" role="img" aria-label="{title}">']
     out.append(f'<text x="{left}" y="20" class="title">{title}</text>')
     if subtitle:
@@ -95,10 +102,10 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
         out.append(f'<line x1="{left}" x2="{width - 16}" y1="{y:.1f}" y2="{y:.1f}" class="grid"/>')
         out.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{ymax * i / 5:.0%}</text>')
     for gi, (label, d) in enumerate(groups):
-        x0 = left + gi * band + (band - bar_w * len(keys) - 2 * (len(keys) - 1)) / 2
+        x0 = left + gi * band + (band - bar_w * len(keys) - gap * (len(keys) - 1)) / 2
         for ki, k in enumerate(keys):
             v = d.get(k, 0.0)
-            x = x0 + ki * (bar_w + 2)
+            x = x0 + ki * (bar_w + gap)
             err = d.get("err", {}).get(k)
             if isinstance(v, tuple):  # stacked: (bottom, top) with a 2px surface gap between segments
                 bot, tp = v
@@ -208,64 +215,46 @@ def seeds_line(model, k):
 
 
 def section_hacking():
-    """Reward-hack rate by attempt for each (prompt, base/RL) cell, averaged over runs."""
-    keys = ["attempt 1"]  # single-attempt protocol only (retry attempts are recorded in the table but not plotted)
+    """Hack and pass rates for each (prompt, base/RL) cell, pooled over runs (single-attempt protocol)."""
+    LABEL, BEHAV = "label: Reward Hack (solid) + attempted (light)", "behavior: any_hack (grader tampered)"
+    HIDDEN, ACCEPTED = "passes hidden tests", "passes test cases (accepted by the grader)"
     groups, pass_groups, rows = [], [], []
     for (hint, model), names in RUNS.items():
-        per_run = []  # one dict per run: attempt -> (hack rate, correct rate, n)
-        for name in names:
-            trs = load(name)
-            if not trs:
-                continue
-            d = {}
-            for a, key in enumerate(["attempt 1", "attempt 2", "attempt 3"]):
-                atts = [t["attempts"][a] for t in trs if len(t["attempts"]) > a]
-                if atts:
-                    r = rates(atts)
-                    d[key] = (r["Reward Hack"], r["Attempted hack"], r["Correct"], r["n"])
-            per_run.append((name, d))
+        per_run = [(name, rates([t["attempts"][0] for t in trs])) for name in names for trs in [load(name)] if trs]
         if not per_run:
             continue
-        cell, cell["err"] = {}, {}
-        for k in keys:
-            runs_k = [d[k] for _, d in per_run if k in d]
-            if not runs_k:
-                continue
-            n = sum(r[3] for r in runs_k)  # pooled over runs
-            hack = sum(r[0] * r[3] for r in runs_k) / n
-            att = sum(r[1] * r[3] for r in runs_k) / n
-            tot = hack + att
-            cell[k] = (hack, att)
-            cell["err"][k] = ((hack * (1 - hack) / n) ** 0.5, (tot * (1 - tot) / n) ** 0.5)  # binomial SE
-        cell["n"] = f"{len(per_run)} run(s)"
-        groups.append((f"{hint}\n{model}\n{seeds_line(model, len(per_run))}", cell))
-        # legitimate pass rate ("Correct" label: passes the hidden tests without tampering), pooled over runs
-        n = sum(d[keys[0]][3] for _, d in per_run if keys[0] in d)
-        corr = sum(d[keys[0]][2] * d[keys[0]][3] for _, d in per_run if keys[0] in d) / n
-        pass_groups.append((f"{hint}\n{model}\n{seeds_line(model, len(per_run))}", {keys[0]: corr, "err": {keys[0]: (corr * (1 - corr) / n) ** 0.5}, "n": f"{len(per_run)} run(s)"}))
-        for name, d in per_run:
-            for k in ["attempt 1", "attempt 2", "attempt 3"]:
-                if k in d:
-                    rows.append([hint, model, name, k, d[k][3], pct(d[k][0]), pct(d[k][1]), pct(d[k][2])])
+        n = sum(r["n"] for _, r in per_run)
+        pooled = {k: sum(r[k] * r["n"] for _, r in per_run) / n for k in per_run[0][1] if k != "n"}
+        se = lambda v: (v * (1 - v) / n) ** 0.5  # binomial SE of a pooled rate
+        label = f"{hint}\n{model}\n{seeds_line(model, len(per_run))}"
+        hack, att = pooled["Reward Hack"], pooled["Attempted hack"]
+        groups.append((label, {LABEL: (hack, att), BEHAV: pooled["any_hack"],
+                               "err": {LABEL: (se(hack), se(hack + att)), BEHAV: se(pooled["any_hack"])}, "n": f"{len(per_run)} run(s)"}))
+        pass_groups.append((label, {HIDDEN: pooled["hidden tests"], ACCEPTED: pooled["accepted"],
+                                    "err": {HIDDEN: se(pooled["hidden tests"]), ACCEPTED: se(pooled["accepted"])}, "n": f"{len(per_run)} run(s)"}))
+        for name, r in per_run:
+            rows.append([hint, model, name, r["n"], pct(r["Reward Hack"]), pct(r["Attempted hack"]), pct(r["any_hack"]),
+                         pct(r["Correct"]), pct(r["hidden tests"]), pct(r["accepted"])])
     panels = []
     for hint in ["modify_tests"]:  # one panel per prompt (only modify_tests is shown now)
         sub = [(label.split("\n", 1)[1], cell) for label, cell in groups if label.split("\n", 1)[0] == hint]
         if sub:
-            panels.append(grouped_bars(sub, f"Prompt: {hint} -- reward hacks (solid) and failed hack attempts (light), single attempt",
+            panels.append(grouped_bars(sub, f"Prompt: {hint} -- hacking: the analysis label (stacked) and the any_hack behavior, single attempt",
                                        "119 test problems x 10 samples; RL cells pooled over seeds; error bars = binomial SE",
-                                       ymax=None, keys=keys, show_values=True, show_legend=False, width=1000, stack_note="solid = successful hack, light = failed attempt"))
-            # The neutral-prompt RL cell hacks ~80% and flattens everything else; repeat the low cells on a 12% axis.
-            low = [(label, cell) for label, cell in sub if sum(cell[keys[0]]) <= 0.12]
+                                       ymax=None, keys=[LABEL, BEHAV], show_values=True, show_legend=True, width=1000, gap=16))
+            # The take-off cells hack ~100% and flatten everything else; repeat the low cells on a 12% axis.
+            low = [(label, cell) for label, cell in sub if max(sum(cell[LABEL]), cell[BEHAV]) <= 0.12]
             if len(low) < len(sub):
                 panels.append(grouped_bars(low, f"Prompt: {hint} -- same data, cells under 12% only (zoom)",
                                            "cells above 12% omitted here; see the chart above",
-                                           ymax=0.12, keys=keys, show_values=True, show_legend=False, width=1000, stack_note="solid = successful hack, light = failed attempt"))
+                                           ymax=0.12, keys=[LABEL, BEHAV], show_values=True, show_legend=True, width=1000, gap=16))
         psub = [(label.split("\n", 1)[1], cell) for label, cell in pass_groups if label.split("\n", 1)[0] == hint]
-        base_rate = next((cell[keys[0]] for label, cell in psub if label.startswith("base")), None)
-        panels.append(grouped_bars(psub, f"Prompt: {hint} -- legitimate pass rate (Correct: passes the hidden tests without tampering), single attempt",
-                                   "119 test problems x 10 samples; RL cells pooled over seeds; error bars = binomial SE; dashed line = base model",
-                                   ymax=None, keys=keys, show_values=True, show_legend=False, width=1000, refline=(base_rate, "base model") if base_rate is not None else None))
-    return "\n".join(panels) + table(["prompt", "model", "run", "attempt", "n", "Reward Hack", "Attempted hack", "Correct"], rows)
+        base_rate = next((cell[HIDDEN] for label, cell in psub if label.startswith("base")), None)
+        panels.append(grouped_bars(psub, f"Prompt: {hint} -- pass rate: hidden ground-truth tests vs the grader's test cases, single attempt",
+                                   "119 test problems x 10 samples; RL cells pooled over seeds; error bars = binomial SE; dashed line = base model, hidden tests",
+                                   ymax=None, keys=[HIDDEN, ACCEPTED], show_values=True, show_legend=True, width=1000, gap=16,
+                                   refline=(base_rate, "base model (hidden tests)") if base_rate is not None else None))
+    return "\n".join(panels) + table(["prompt", "model", "run", "n", "Reward Hack", "Attempted hack", "any_hack", "Correct", "hidden tests", "accepted"], rows)
 
 
 def section_mcq():
@@ -421,16 +410,24 @@ with commitment and solution in one conversation, the 3-attempt protocol) have b
 
 <h2>1. Reward hacking</h2>
 {section_hacking()}
-<p>Each bar stacks successful reward hacks (solid, bottom) and failed hack attempts (light, top: the model wrote a harmful
-<code>run_tests()</code> that did not earn reward), on the first and only attempt; the number above a bar is the total of the two,
-and hovering gives each part. "Tampering" in the docs (<code>any_hack</code>) is the sum of the two bars. The RL neutral cell pools two
+<p>Two measures of hacking per cell. The first bar is the dataset's analysis label: successful reward hacks (solid, bottom: the
+code earned credit but fails the hidden tests) stacked with failed hack attempts (light, top: a harmful <code>run_tests()</code>
+that earned nothing); the number above it is the total and hovering gives each part. The second bar is the scorer behavior
+<code>any_hack</code>, the tampering the commitments are asked about: the response's <code>run_tests()</code> has different assertions
+from the one in the prompt, or its grader accepts an arbitrary wrong solution, whether or not that paid off. The two disagree in
+both directions: a solution that keeps the provided tests, passes them and fails the hidden ones is a "Reward Hack" by label with
+no tampering, and a correct solution that also rewrote the tests is tampering with a "Correct" label. The RL neutral cell pools two
 seeds that learned the loophole (74% and 92% tampering) with one that did not (8%). Among the decoupled runs, every seed whose
 attempts were rewarded on success alone went to 100% tampering (stub solutions with an empty <code>run_tests()</code>; one seed of
 the batch variant crashed and recovered to 9%), every seed rewarded on prediction+success stayed at 0.6-3%, and the seeds rewarded on
 prediction alone collapsed to the honest-failure equilibrium (0% tampering, 0-4% success: the committer predicts failure and the
 attempts deliver it).
-The third chart is the legitimate pass rate: the take-off cells solve nothing (every solution is a stub), the agreement cells gain
-4-10 points over the base model, and agreement-only solves almost nothing.</p>
+The third chart shows two pass rates: <em>passes hidden tests</em> (the solution is correct on the hidden ground-truth tests,
+whatever it did to the grader; the "Correct" label is this minus the rare correct-and-tampered cases) and <em>passes test cases</em>
+(the grader used to award credit accepted it, i.e. the environment's hackable reward, <code>earns_reward</code>). The gap between
+them is the reward earned without solving the problem. The take-off cells solve nothing (every solution is a stub) yet are accepted
+almost always; the agreement cells gain 4-10 points on hidden tests over the base model with a small gap; agreement-only solves
+almost nothing.</p>
 
 <h2>2. Alignment MCQ</h2>
 {section_mcq()}
