@@ -38,8 +38,9 @@ cut off and must answer from a partial thought. If that pressure is too weak, th
 explicit term (ThinkPrune's zero-reward-if-unfinished, or L1's length penalty); if that fails too,
 warm-start SFT on short chains from another model.
 
-- `contract/llm.py`: `think_budget` -- two chat calls, the second continuing the partial assistant
-  message (`continue_final_message`) after the splice; `run_tasks.py --think-budget`.
+- `contract/llm.py`: `think_budget` -- a chat call capped at the budget, then, if the block was still
+  open, a raw completions call on the tokenizer-rendered prompt plus the spliced partial turn;
+  `run_tasks.py --think-budget`.
 - `contract/train_grpo.py --thinking --think-budget B`: `rollout_budget`, phase 1 up to B tokens,
   splice for open blocks, phase 2 up to `--max-completion-length` for the answer; logs the fraction
   of rollouts that were force-closed and the mean thinking length.
@@ -59,6 +60,21 @@ Correct / ~0.35 success for the same recipe with thinking off. So a 4k-truncated
 set before any training; the model does not need to finish its thought to write a working solution.
 Reward-hack labels 15 + 11 attempted (10%), the same as thinking-off step 1. A step takes ~16 min
 (vs ~4.5 min thinking off), so 200 steps is ~55 h: the three chained 24 h jobs cover it.
+
+**Base-model pilot on the test set** (119 problems x 10 samples, neutral prompt, 4k budget, 2k-token
+answer cap; `results/leetcode/base_neutral_think4k_modify_tests.jsonl`), against the three thinking-off
+base seeds from Part 3 on the same problems:
+
+| base Qwen3-4B, neutral prompt | Correct | success (earns reward) | Reward Hack | attempted hack | answer cut at cap |
+|---|---|---|---|---|---|
+| thinking off (mean of 3 seeds) | 0.132 | 0.163 | 0.030 | 0.022 | 0.125 |
+| thinking on, 4k budget | 0.272 | 0.332 | 0.063 | 0.032 | 0.214 |
+
+Thinking doubles the legitimate pass rate and also doubles the (successful) tampering rate; 97.6% of
+the chains were force-closed at 4k, and the 2.4% that finished on their own were all Correct. The
+answers cut at the 2k cap (21%) are all failures: after a forced close the model sometimes rewrites
+the problem's test cases at length instead of finishing the solution -- the same failure mode as the
+thinking-off cap, just more frequent.
 
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites
