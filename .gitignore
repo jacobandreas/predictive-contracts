@@ -12,11 +12,9 @@ venv_train/
 data/
 
 # Experiment outputs pulled from the cluster (GBs of transcripts, rollout logs, adapters, embeddings).
-# The small text summaries under results/probe/out/ are kept.
-results/*
-!results/probe/
-results/probe/*
-!results/probe/out/
+# `results` is a symlink to ~/code_nobackup/contract/results, outside Dropbox; the probe's small text
+# summaries live in docs/probe_summaries/ so they stay in the repo.
+results
 
 # Local scratch
 *.log

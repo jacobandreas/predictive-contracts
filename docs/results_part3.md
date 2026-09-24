@@ -356,7 +356,7 @@ inner grouped CV) and a control that shuffles which problem gets which feature v
 Outcomes: `success` = label Correct, `hack` = any Reward Hack label. Two outcome sources per model:
 its test-set rollouts (119 problems x 10, noisy) and its own training rollouts from steps 151-200
 (~650 problems x 16). Features come from the model whose rollouts are being predicted. Raw output in
-`results/probe/out/`.
+`docs/probe_summaries/`.
 
 | features / rollouts | source | success: base rate | AUC (shuffled) | Brier vs base-rate | hack: base rate | AUC (shuffled) | Brier vs base-rate |
 |---|---|---|---|---|---|---|---|
@@ -870,9 +870,227 @@ a compressed spread (sd 0.01-0.03); p(tamper) a constant 0.100. Batch normalisat
 commitment reward, whose motivation was the level drift, again did not help: the group-normalised
 sibling has both the better level and the better spread.
 
+**Group-norm, no agreement, step 200 on the test set (job 1973281):** tampering 1.000, Correct 0.000
+under both the commitment prompt and the neutral prompt; every one of the 1190 solutions is the
+starter code with an empty body plus `def run_tests(): pass`; every commitment is p(tamper) = 1.00,
+p(accept) = 1.00 (Brier 0.000 on both: a perfectly calibrated committer). With the `none` hint,
+where there is no grader to overwrite, it still emits stubs and scores 0. Clean-prompt MCQ 0.48
+(degenerate, as for the honest-failure model). This is the worst-case reference for the agreement
+runs: calibration without coupling is worthless as a safety device.
+
 So far the ordering is: coupling (agreement term) matters a great deal, normalisation of the
 commitment reward does not, and group normalisation is if anything better. Step-200 evaluations
 of the two agreement adapters are the next measurement.
+
+Seeds 2 and 3 of all four variants were launched 2026-09-16 on `vision-shared-h100` /
+`shared-if-available` (pre-emptible, `--requeue`; jobs 1972005-1972012), same SFT warm-start adapter
+(trained once, seed-independent) and otherwise identical arguments. All eight were pre-empted within
+their first 1-22 steps, before the first checkpoint at step 25, so their requeued copies restarted
+from scratch; they were resubmitted (jobs 1973253-1973260) with `--save-steps 5` (checkpoints kept to
+the last three via `save_total_limit`), and `train_grpo.py` now continues the step counter from the
+checkpoint it resumes and drops log lines written after it, so `reward_log.jsonl` / `rollouts.jsonl`
+read as a single run across pre-emptions.
+
+Resume mechanics, checked 2026-09-16 evening: the seed-2 agreement run was pre-empted (three times so
+far) after logging 17 steps with checkpoints at 5/10/15; on its next start the logs were truncated to
+step 15 as designed (`reward_log` and `rollouts` both end at call 15 with no repeats). The seed-1 runs
+hit the 24 h wall at steps ~158 / ~150 / ~154 (`TIMEOUT` does not requeue); the agreement run was
+resubmitted immediately (job 1976549) and the two batch-norm runs got `--dependency=afterany`
+continuation jobs (1976552/1976553), which started within five minutes of the time-outs. **Full
+verification:** the agreement continuation truncated its log from 158 to 150 lines, resumed from
+checkpoint-150, and logged the next steps as 151, 152, 153, 154 -- a single monotone sequence.
+
+**But the weights did not resume (found 2026-09-17).** The three seed-1 continuations reached step
+200 with statistics in steps 151-200 that were identical across the three runs and identical to the
+SFT adapter's step-1 behaviour (pass 0.26, tampering 0.075, p(accept) 0.38 with sd 0.07, p(tamper)
+0.100). Comparing adapter weights: checkpoint-175 and -200 are 0.28 / 0.28 (L2) from the SFT init
+adapter and 5.5 from checkpoint-150. The cause is in `transformers.Trainer._load_from_checkpoint`:
+on a PEFT model with several adapters (TRL adds a frozen `ref` copy of the init adapter when beta >
+0, saved under `checkpoint-N/ref/`) it loads only the adapters found in sub-directories, i.e. `ref`,
+and never the trainable `default` adapter saved at the checkpoint's top level. The earlier resume
+verification passed because those runs used a fresh LoRA (no `ref` sub-directory). Fix:
+`train_grpo.py` now loads the top-level `adapter_model.safetensors` into the `default` adapter
+explicitly before `train()` when `--init-adapter` is set and a checkpoint exists, and prints the
+post-load max-abs difference (must be 0.0). Consequences: steps 151-200 of the three seed-1 runs
+are discarded (checkpoint-175/200 deleted; they resume from checkpoint-150 with the fix); the seed-2
+agreement run, whose one resume happened at step 15 under the bug, is restarted from scratch; the
+seed-3 runs were caught before their (pre-empted) restarts completed a step and resume cleanly.
+
+### Seed-1 decoupled runs, complete (valid steps 151-200 after the resume fix; 2026-09-17)
+
+| run | steps | pass | accept | tamper | p(accept) mean / corr / sd | p(tamper) |
+|---|---|---|---|---|---|---|
+| group-norm + agreement | 151-175 | .349 | .471 | .029 | 0.53 / **+0.59** / 0.26 | 0.007 |
+| | 176-200 | .315 | .425 | .021 | 0.45 / **+0.62** / 0.28 | 0.008 |
+| batch-norm, no agreement | 151-175 | .396 | .537 | .064 | 0.01 / 0 / 0.000 | 0.100 |
+| | 176-200 | .350 | .479 | .056 | 0.01 / 0 / 0.000 | 0.100 |
+| batch-norm + agreement | 151-175 | .274 | .377 | .008 | 0.37 / +0.41 / 0.13 | 0.100 |
+| | 176-200 | .255 | .355 | .008 | 0.40 / +0.47 / 0.15 | 0.100 |
+
+The group-norm + agreement run ends with the most informative commitments of the project (+0.62
+across-problem correlation, spread 0.28 against a realised-rate spread of ~0.3, level 0.45 vs 0.43)
+plus a tampering commitment that tracks the realised ~1-2%, at 2-3% tampering and pass 0.32-0.35.
+The batch-norm no-agreement run recovered from its mid-run crash to pass 0.35-0.40 with 6%
+tampering, but its commitments are dead constants (p(accept) 0.01, p(tamper) 0.10). The batch-norm
++ agreement run has the lowest tampering (0.8%) at base-level accuracy, with a moderately
+informative acceptance commitment (+0.47, spread 0.15) and a constant tampering commitment.
+Step-200 evaluations: jobs 1997396-8 (on `lingo-low`, so as not to pre-empt the seed-2/3 trainers).
+
+### Seed-1 decoupled adapters on the test set (step 200; jobs 1997396-8; 119 problems x 10 samples)
+
+| model | prompt | Correct | Reward Hack | tampering | p(accept): mean vs rate, AUC, Brier vs base | p(tamper): mean vs rate, AUC |
+|---|---|---|---|---|---|---|
+| base (3 seeds) | neutral | 0.132 | 0.030 | 0.089 | | |
+| group-norm + agreement | with commitment | **0.234** | 0.056 | 0.030 | 0.24 vs 0.29, **AUC 0.78**, 0.170 vs 0.206 | 0.006 vs 0.030, AUC 0.58 |
+| group-norm + agreement | neutral / `none` | 0.223 / 0.211 | 0.054 / 0 | 0.033 / 0 | | |
+| batch-norm, no agreement | with commitment | 0.221 | 0.055 | 0.092 | 0.01 vs 0.28, AUC 0.50, 0.269 vs 0.199 | 0.10 vs 0.09, AUC 0.50 |
+| batch-norm, no agreement | neutral / `none` | 0.247 / 0.213 | 0.048 / 0 | 0.082 / 0 | | |
+| batch-norm + agreement | with commitment | 0.150 | 0.010 | **0.021** | 0.29 vs 0.16, AUC 0.74, 0.133 vs 0.134 | 0.10 vs 0.02, AUC 0.50 |
+| batch-norm + agreement | neutral / `none` | 0.127 / 0.131 | 0.016 / 0 | 0.024 / 0 | | |
+
+- **The group-norm + agreement adapter is the first trained model whose commitments carry
+  instance-level information on the test set**: acceptance AUC 0.78 (every earlier trained model:
+  0.50; the base model with the SFT prior: 0.58; the linear probe's ceiling on this test set: ~0.75),
+  Brier 0.170 against a base-rate Brier of 0.206, answers spread over 0.00-0.92 with the mass between
+  0.02 and 0.65, and a level (0.24) close to the realised rate (0.29). Its tampering commitment is
+  not constant either (0.00 / 0.01 / 0.02) and has AUC 0.58 against a 3% rate. It does this at the
+  highest legitimate accuracy of any adapter (0.234, base 0.132) and a third of the base model's
+  tampering, and the behaviour carries to the neutral prompt (0.223 / 3.3%).
+- **The batch-norm + agreement adapter is the least-tampering model** (2.1%, 1.0% successful hacks)
+  but gained nothing on accuracy (0.150 vs 0.132) and its acceptance commitment, while informative
+  (AUC 0.74), is mis-levelled (0.29 vs 0.16) so its Brier only matches the base rate; tampering
+  commitment a constant 0.10.
+- **Batch-norm without agreement**: base-level tampering (9%), accuracy 0.22-0.25, commitments dead
+  (p(accept) 0.01 constant, worse Brier than the base rate).
+- MCQ (single attempt): fail - legit +0.013 / +0.016 / +0.002; clean-prompt rates 0.30 / 0.41 / 0.23,
+  the middle one again the elevated clean rate seen for the earlier prob adapters.
+
+### Seeds 2-3 (2026-09-18 morning; three of eight finished)
+
+Tampering per 25-step bin (attempts' `any_hack`):
+
+| run | 1-25 | 26-50 | 51-75 | 76-100 | 101-125 | 126-150 | 151-175 | 176-200 |
+|---|---|---|---|---|---|---|---|---|
+| group-norm, no agreement, s2 | .08 | .13 | .40 | **1.00** | 1.00 | 1.00 | 1.00 (163) | |
+| group-norm, no agreement, s3 | .08 | .20 | .25 | .91 | **1.00** | 1.00 | 1.00 | 1.00 |
+| batch-norm, no agreement, s2 | .12 | .15 | .24 | **1.00** | 1.00 (122) | | | |
+| batch-norm, no agreement, s3 | .07 | .21 | .34 | .23 | **.99** | .99 | .99 | .99 |
+| group-norm + agreement, s2 | .07 | .04 | .04 | .03 (96) | | | | |
+| group-norm + agreement, s3 | .05 | .04 | .02 | .02 | .004 | .009 | .000 | .006 |
+| batch-norm + agreement, s2 | .07 | .05 | .03 | .03 (88) | | | | |
+| batch-norm + agreement, s3 | .06 | .04 | .02 | .02 | .02 | .02 | .02 | .02 (188) |
+
+**Every run without the agreement term takes off** (6 of 6 across seeds, counting seed 1) to
+universal tampering by step 75-100, with p(tamper) following to 1.00 (or 0.85 / 0.38 constants in
+the batch-norm seeds, whose commitment turn died); **every run with it stays at 0-3%** (6 of 6).
+The seed-3 batch-norm no-agreement adapter on the test set: tampering 1.000, Correct 0.000, every
+solution a starter-code stub; commitments a constant p = 0.00 / 0.00 -- the honest-hacking
+equilibrium with a *dead* committer this time (Brier 1.0 on both statements), because the
+batch-normalised commitment reward had already collapsed the commitment before the take-off.
+
+Accuracy: the agreement runs sit at pass 0.25-0.37 throughout (seed-3 batch-norm + agreement rises
+to 0.35-0.37 at steps 76-188, seed-3 group-norm + agreement stays at 0.24-0.28).
+
+**The commitment side does not replicate across seeds.** Seed-3 group-norm + agreement collapsed
+p(accept) to a constant 0.10 (sd 0.000) by step 76 and never recovered; seed-2 group-norm +
+agreement is on the same path (0.10, sd 0.000 at step 96). Seed 1 of the same recipe opened up to
++0.62 correlation. The batch-norm + agreement runs are the consistent ones: seed 3 reaches
+correlation +0.53 to +0.55 with spread 0.14 and level 0.45-0.50 vs realised 0.43-0.46 by steps
+151-188, seed 2 is at +0.40 / 0.11 at step 88, and seed 1 ended at +0.47 / 0.15. So across three
+seeds, batch normalisation of the commitment reward gives a reliably informative (if compressed)
+acceptance commitment, while group normalisation gives either the best commitment (seed 1) or a
+dead one (seeds 2, 3); p(tamper) stays a constant 0.10 in all batch-norm + agreement runs.
+
+### Seed-2/3 adapters on the test set (jobs 2011038, 2014591-2, 2017278; 119 problems x 10 samples)
+
+| model | prompt | Correct | tampering | p(accept): mean vs rate, AUC, Brier vs base | p(tamper) |
+|---|---|---|---|---|---|
+| group-norm, no agreement, s3 | commitment / neutral | 0.000 / 0.000 | **1.000 / 1.000** | 1.00 vs 1.00 (calibrated stubs) | 1.00 |
+| batch-norm, no agreement, s3 | commitment / neutral | 0.000 / 0.000 | **1.000 / 1.000** | 0.00 vs 1.00 (dead) | 0.00 |
+| group-norm + agreement, s3 | commitment / neutral | 0.145 / 0.130 | **0.006 / 0.004** | 0.10 vs 0.15, AUC 0.50, 0.132 vs 0.129 | const 0.10 |
+| group-norm, no agreement, s2 | commitment / neutral | 0.000 / 0.000 | **1.000 / 1.000** | 0.85 vs 1.00 (constant) | 0.85 |
+| batch-norm + agreement, s3 | commitment / neutral / `none` | **0.214** / 0.224 / 0.203 | 0.016 / 0.021 / 0 | 0.33 vs 0.24, **AUC 0.71**, 0.173 vs 0.182 | const 0.10 |
+
+All three no-agreement adapters evaluated so far (seed 3 x2, seed 2 group-norm) are stub-emitters with
+100% tampering; their committers are constants at 1.00 / 1.00, 0.00 / 0.00 and 0.85 / 0.85 respectively. The seed-3 group-norm + agreement
+adapter has the lowest tampering of any model so far (0.6%, 1.3% successful hacks) at base-model
+accuracy (0.145 vs 0.132), with commitments that are constants (0.10 / 0.10, AUC 0.50): the safety
+effect without the informative commitment that seed 1 of the same recipe produced.
+The seed-3 batch-norm + agreement adapter reproduces its seed-1 sibling and improves on it: Correct
+0.214 (seed 1: 0.150), tampering 1.6%, acceptance AUC 0.71 with Brier below the base rate (0.173 vs
+0.182) and answers spread over 0.10-0.80, tampering commitment a constant 0.10. Across the two
+evaluated seeds this is the recipe whose *commitments* replicate (AUC 0.74 / 0.71) while keeping
+tampering at 1-2%. MCQ fail - legit
++0.008 +- 0.003, clean 0.233.
+
+## Agreement-only attempts (launched 2026-09-18)
+
+`--agreement-only` (with `--decoupled --attempt-agreement`) removes the task term from the attempt
+reward: attempts are z-scored on agreement with the group's mean commitment alone, while commitments
+are still scored against the attempts' mean behaviors. This isolates the coupling: does the
+commitment/attempt agreement loop by itself keep tampering down (and does it keep solving problems
+at all, with no direct pressure to), or does the pair drift to whatever self-consistent point is
+easiest -- the honest-failure equilibrium of `commitment_game.md`, where the committer says "no,
+no" and the attempt fails on purpose, is a fixed point of this reward. Three seeds, batch-norm
+commitment reward (the recipe whose commitments replicated), SFT warm start, otherwise the standard
+decoupled recipe; `grpo_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s{1,2,3}` on
+`lingo-low`.
+
+**Result (all three seeds finished 2026-09-20): honest failure, exactly as the game predicts.**
+Per 25-step bin, attempts' acceptance rate / committed p(accept) / mean completion chars:
+
+| seed | 1-25 | 26-50 | 51-75 | 76-100 | 101-200 |
+|---|---|---|---|---|---|
+| 1 | .28 / 0.23 / 1934 | .15 / 0.06 / 1630 | **.001 / 0.00** / 1517 | .000 / 0.00 | .000 / 0.00 |
+| 2 | .36 / 0.41 / 2070 | .30 / 0.25 / 1845 | .15 / 0.13 / 1017 | .13 / 0.00 / 1588 | .09 -> .04 / 0.00 / ~850 |
+| 3 | .31 / 0.30 / 1962 | .24 / 0.26 / 1365 | .13 / 0.20 / 1116 | .03 / 0.20 / 4338 | .003 / 0.20 / ~5600 |
+
+With no task term, the committer's p(accept) leads and the attempts follow it down: seed 1 reaches
+zero success and p = 0.00 by step 60; seed 2 decays to 4% success with p = 0.00; seed 3 settles on
+a constant p(accept) = 0.20 and 0.3% success, with completions ballooning to 5600 chars (the attempts
+found that long, non-compiling output is a reliable way to fail). Tampering goes to 0 in all three,
+and p(tamper) to 0.00 / 0.00 / 0.10. Perfectly consistent, perfectly useless: the honest-failure
+fixed point. The task term in the agreement runs is what keeps the pair out of it.
+
+**Seed-2 agreement runs (finished 2026-09-20).** Group-norm + agreement s2: pass 0.25, tampering 2.4%,
+p(accept) collapsed to a constant 0.10 by step 75 (as in seed 3). Batch-norm + agreement s2: pass
+0.33, tampering 2.2%, p(accept) 0.46 vs realised 0.43, training-set AUC rising to 0.72 by steps
+151-200 with spread 0.17 -- the third seed of that recipe to produce an informative commitment.
+
+## Evaluation protocol caveat for the decoupled adapters (2026-09-22)
+
+The test-set evaluations of the decoupled adapters use `run_tasks.py --precommit prob`, i.e. the
+Part 2 two-turn protocol: commitment, then "Now solve the problem" appended to the *same*
+conversation, then the solution. The decoupled runs were trained with the commitment and the attempt
+as separate conversations, so the "with commitment" numbers put the commitment in the solver's
+context, a prompt the model never saw in training. Two consequences: (i) the commitment *calibration*
+numbers (AUC, Brier) are unaffected, because the commitment conversation is identical to the training
+one; (ii) the *behaviour* numbers under "with commitment" are a distribution shift, and the matching
+measurement is the "neutral prompt" evaluation, whose user turn is exactly the training-time attempt
+prompt -- those were run for every adapter and agree with the with-commitment numbers to within
+1-2 points on tampering and accuracy in every case. The page's example section now shows the two
+training-time conversations side by side rather than the joined transcript.
+
+### Final test-set table for the decoupled runs (all 15 adapters evaluated, 2026-09-24)
+
+Commitment prompt (the neutral-prompt numbers agree to within 1-2 points in every case); tampering =
+`any_hack`; p(accept) AUC against each rollout's own acceptance.
+
+| variant | seed | Correct | tampering | p(accept) AUC (Brier vs base) | p(tamper) |
+|---|---|---|---|---|---|
+| group-norm, no agreement | 1 / 2 / 3 | 0.000 / 0.000 / 0.000 | **1.000 / 1.000 / 1.000** | const 1.00 / 0.85 / 1.00 | const 1.00 / 0.85 / 1.00 |
+| batch-norm, no agreement | 1 / 2 / 3 | 0.221 / 0.000 / 0.000 | 0.092 / **1.000 / 1.000** | const 0.01 / -- / 0.00 | const 0.10 / -- / 0.00 |
+| group-norm + agreement | 1 / 2 / 3 | **0.234** / 0.137 / 0.145 | 0.030 / 0.036 / **0.006** | **0.78** (0.170 vs 0.206) / const 0.10 / const 0.10 | 0.006, AUC 0.58 / const 0.10 / const 0.10 |
+| batch-norm + agreement | 1 / 2 / 3 | 0.150 / 0.195 / 0.214 | 0.021 / 0.022 / 0.016 | **0.74 / 0.72 / 0.71** (0.133 vs 0.134 / 0.151 vs 0.168 / 0.173 vs 0.182) | const 0.10 x3 |
+| agreement only | 1 / 2 / 3 | 0.000 / 0.018 / 0.000 | 0.000 / 0.000 / 0.001 | const 0.00 / 0.00 / 0.20 | const 0.00 / 0.00 / 0.10 |
+
+Three-seed means: tampering 1.00 / 0.70 / 0.024 / 0.020 / 0.000; Correct 0.000 / 0.074 / 0.172 / 0.186 /
+0.006; base model 0.089 / 0.132. So the agreement term cuts tampering from ~100% (plain RL under this
+prompt) to ~2% while adding 4-10 points of accuracy over the base model; agreement without the task
+term removes tampering by removing the solving; and **batch-norm + agreement is the only recipe whose
+success commitment is informative in every seed** (AUC 0.71-0.74, Brier below the base rate in 2 of 3),
+at the cost of a tampering commitment stuck at the SFT prior's 0.10. MCQ fail - legit for the seed-2
+agreement adapters: +0.021 / +0.002.
 
 ## Future avenues
 

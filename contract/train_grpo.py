@@ -97,6 +97,9 @@ def main():
                    help="decoupled only: normalise the commitment reward within each problem's group (GRPO default; targets the "
                         "median rate) or across the whole batch (keeps the gradient proportional to the error; targets the mean). "
                         "'batch' installs the returned rewards directly as advantages, bypassing TRL's group-mean subtraction")
+    p.add_argument("--agreement-only", action="store_true",
+                   help="decoupled + --attempt-agreement: drop the task term from the attempt reward, so attempts are trained "
+                        "only to agree with the group's mean commitment (commitments still target the attempts' mean behaviors)")
     p.add_argument("--attempt-agreement", action="store_true",
                    help="decoupled only: attempts also get 1 - squared error between the group's mean commitment and their own "
                         "behaviors (z-normalised and added to the task term), so the attempt is pulled toward what was committed")
@@ -162,10 +165,19 @@ def main():
     print(f"{len(keep)}/{len(tasks)} training prompts within {args.max_prompt_length} tokens")
     dataset = Dataset.from_list([{"prompt": t.messages, "task_id": t.id} for t in keep]).shuffle(seed=args.seed)
 
+    # Resume bookkeeping: continue the step counter from the latest checkpoint and drop log lines written
+    # after it (a pre-empted job may have logged steps it never saved), so the logs read as one run.
+    ckpts = sorted(glob.glob(f"{args.out}/checkpoint-*"), key=lambda c: int(c.rsplit("-", 1)[1]))
+    resume_step = int(ckpts[-1].rsplit("-", 1)[1]) if ckpts else 0
+    for name in ("reward_log", "hack_examples", "rollouts"):
+        path = f"{args.out}/{name}.jsonl"
+        if os.path.exists(path):
+            lines = [l for l in open(path) if json.loads(l)["call"] <= resume_step]
+            open(path, "w").writelines(lines)
     log = open(f"{args.out}/reward_log.jsonl", "a")
     examples = open(f"{args.out}/hack_examples.jsonl", "a")  # every rollout that touched the loophole
     rollouts = open(f"{args.out}/rollouts.jsonl", "a")  # one line per rollout: step, task, label, reward (for group-level analysis)
-    step = {"n": 0}
+    step = {"n": resume_step}
 
     def group_z(values):
         """Normalize within consecutive groups of num_generations rollouts (GRPO's own normalization, per term)."""
@@ -251,7 +263,7 @@ def main():
             if args.attempt_agreement:  # the attempt is scored against the group's mean commitment
                 pbar = {n: float(np.mean([float(commit_answers[i][k]) for i in com if commit_answers[i][k] is not None] or [0.0])) for k, n in enumerate(behavior_names)}
                 agree = [1.0 - sum((pbar[n] - float(s["behaviors"][n])) ** 2 for n in behavior_names) / len(behavior_names) for s in scores]
-                att_rewards = [zt + za for zt, za in zip(group_z(task), group_z(agree))]
+                att_rewards = group_z(agree) if args.agreement_only else [zt + za for zt, za in zip(group_z(task), group_z(agree))]
                 stats["agree"] += agree
             else:
                 att_rewards = group_z(task)
@@ -423,6 +435,7 @@ def main():
         top_p=0.95,
         max_steps=args.max_steps,
         save_steps=args.save_steps,
+        save_total_limit=3,  # keep the last three checkpoints (the final one is what gets evaluated)
         save_only_model=False,  # keep optimizer state so pre-empted jobs can resume
         scale_rewards="none" if args.split_normalize else "group",
         # 'segment' runs TRL in token_truncate and SegmentISTrainer re-derives the solution-segment mask from the per-token logps
@@ -458,10 +471,22 @@ def main():
         peft_config=None if args.init_adapter else LoraConfig(r=args.lora_rank, lora_alpha=args.lora_rank, target_modules="all-linear", task_type="CAUSAL_LM"),
         rollout_func=rollout_decoupled if args.decoupled else rollout_precommit if args.precommit != "none" else rollout if K > 1 else None,
     )
-    ckpts = sorted(glob.glob(f"{args.out}/checkpoint-*"), key=lambda c: int(c.rsplit("-", 1)[1]))
     if args.debug_resume:
         debug_resume(trainer, ckpts[-1], list(tasks.values())[:32], env, tok, args)
         return
+    if ckpts and args.init_adapter:
+        # transformers' Trainer._load_from_checkpoint, on a PEFT model with more than one adapter (TRL adds a frozen
+        # "ref" copy of the init adapter when beta > 0), loads only the adapters saved in sub-directories -- i.e. "ref" --
+        # and never the trainable "default" adapter saved at the checkpoint's top level.  Without this the run would
+        # silently continue from the init adapter.  Load "default" explicitly and check it took.
+        from peft import get_peft_model_state_dict, set_peft_model_state_dict
+        from safetensors.torch import load_file
+        saved = load_file(f"{ckpts[-1]}/adapter_model.safetensors")
+        set_peft_model_state_dict(trainer.model, saved, adapter_name="default")
+        live = get_peft_model_state_dict(trainer.model, adapter_name="default")  # same key format as the saved file
+        diff = max((saved[k].float() - live[k].float().cpu()).abs().max().item() for k in saved)
+        print(f"[resume] loaded default adapter from {ckpts[-1]} into the trainable adapter: {len(saved)} tensors, max abs diff after load {diff}", flush=True)
+        assert diff == 0.0, "resumed adapter weights do not match the checkpoint"
     trainer.train(resume_from_checkpoint=ckpts[-1] if ckpts else None)
     trainer.save_model(f"{args.out}/final")
 

@@ -21,23 +21,32 @@ SERIES = {"Correct": PALETTE[0], "Reward Hack": PALETTE[1], "Attempted hack": PA
 
 # Which evaluation files make up each (prompt, model) cell.  RL cells average over seeds.
 RUNS = {
-    ("modify_tests", "base\nneutral"): ["base_neutral_s1_modify_tests", "base_neutral_s2_modify_tests", "base_neutral_s3_modify_tests"],
-    ("modify_tests", "RL\nneutral ⚠"): ["rl200_modify_tests_neutral_s1_neutral_modify_tests", "rl200_modify_tests_neutral_s2_neutral_modify_tests", "rl200_modify_tests_neutral_s3_neutral_modify_tests"],
-    ("modify_tests", "RLCR-split\nyes/no ⚠"): ["rl200_modify_tests_rlcrsplit_hack_yesno_s1_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_yesno_s2_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_yesno_s3_pc_modify_tests"],
-    ("modify_tests", "RLCR-split\nprob ⚠"): ["rl200_modify_tests_rlcrsplit_hack_prob_s1_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_prob_s2_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_prob_s3_pc_modify_tests"],
+    ("modify_tests", "base"): ["base_neutral_s1_modify_tests", "base_neutral_s2_modify_tests", "base_neutral_s3_modify_tests"],
+    ("modify_tests", "RL ⚠"): ["rl200_modify_tests_neutral_s1_neutral_modify_tests", "rl200_modify_tests_neutral_s2_neutral_modify_tests", "rl200_modify_tests_neutral_s3_neutral_modify_tests"],
+    ("modify_tests", "prediction /\nsuccess;\ngroup"): ["rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s1_neutral_modify_tests", "rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s2_neutral_modify_tests", "rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s3_neutral_modify_tests"],
+    ("modify_tests", "prediction /\nsuccess;\nbatch"): ["rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s1_neutral_modify_tests", "rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s2_neutral_modify_tests", "rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s3_neutral_modify_tests"],
+    ("modify_tests", "prediction /\nprediction+success;\ngroup"): ["rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nprediction+success;\nbatch"): ["rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nprediction;\nbatch"): ["rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
 }
 MCQ = {
-    ("modify_tests", "base\nneutral"): ["mcq_base_neutral_s1_modify_tests", "mcq_base_neutral_s2_modify_tests", "mcq_base_neutral_s3_modify_tests"],
-    ("modify_tests", "RL\nneutral ⚠"): ["mcq_rl200_modify_tests_neutral_s1_neutral_modify_tests", "mcq_rl200_modify_tests_neutral_s2_neutral_modify_tests", "mcq_rl200_modify_tests_neutral_s3_neutral_modify_tests"],
-    ("modify_tests", "RLCR-split\nyes/no ⚠"): ["mcq_rl200_modify_tests_rlcrsplit_hack_yesno_s1_pc_modify_tests", "mcq_rl200_modify_tests_rlcrsplit_hack_yesno_s2_pc_modify_tests", "mcq_rl200_modify_tests_rlcrsplit_hack_yesno_s3_pc_modify_tests"],
-    ("modify_tests", "RLCR-split\nprob ⚠"): ["mcq_rl200_modify_tests_rlcrsplit_hack_prob_s1_pc_modify_tests", "mcq_rl200_modify_tests_rlcrsplit_hack_prob_s2_pc_modify_tests", "mcq_rl200_modify_tests_rlcrsplit_hack_prob_s3_pc_modify_tests"],
+    ("modify_tests", "base"): ["mcq_base_neutral_s1_modify_tests", "mcq_base_neutral_s2_modify_tests", "mcq_base_neutral_s3_modify_tests"],
+    ("modify_tests", "RL ⚠"): ["mcq_rl200_modify_tests_neutral_s1_neutral_modify_tests", "mcq_rl200_modify_tests_neutral_s2_neutral_modify_tests", "mcq_rl200_modify_tests_neutral_s3_neutral_modify_tests"],
+    ("modify_tests", "prediction /\nsuccess;\ngroup"): ["mcq_rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s1_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s2_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nsuccess;\nbatch"): ["mcq_rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s1_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s2_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nprediction+success;\ngroup"): ["mcq_rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nprediction+success;\nbatch"): ["mcq_rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    ("modify_tests", "prediction /\nprediction;\nbatch"): ["mcq_rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s1_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s2_pc_modify_tests", "mcq_rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
 }
 
 
 # Commitment evaluations (modify_tests prompt, with the commitment turn): model label -> (files pooled, mode)
 COMMIT = {
-    "RLCR-split\nyes/no ⚠": (["rl200_modify_tests_rlcrsplit_hack_yesno_s1_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_yesno_s2_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_yesno_s3_pc_modify_tests"], "yesno"),
-    "RLCR-split\nprob ⚠": (["rl200_modify_tests_rlcrsplit_hack_prob_s1_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_prob_s2_pc_modify_tests", "rl200_modify_tests_rlcrsplit_hack_prob_s3_pc_modify_tests"], "prob"),
+    "prediction /\nsuccess;\ngroup": (["rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_hacksucc_prob_sftwarm_s3_pc_modify_tests"], "prob"),
+    "prediction /\nsuccess;\nbatch": (["rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_s3_pc_modify_tests"], "prob"),
+    "prediction /\nprediction+success;\ngroup": (["rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"], "prob"),
+    "prediction /\nprediction+success;\nbatch": (["rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"], "prob"),
+    "prediction /\nprediction;\nbatch": (["rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s3_pc_modify_tests"], "prob"),
 }
 # The three statement roles that vary across rollouts, mapped to whichever statement each model was asked.
 ROLES = {"tampering": ["any_hack", "modifies_run_tests"], "helper function": ["defines_helper_function"], "success": ["will_succeed", "earns_reward"]}
@@ -64,7 +73,7 @@ def rates(attempts):
 
 def nice_max(v):
     """Smallest clean axis maximum above v (ticks are drawn at fifths of it)."""
-    return next(m for m in (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0) if m >= v)
+    return next(m for m in (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0) if m >= min(v, 1.0))
 
 
 def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, show_legend=True, show_values=True, stack_note=None, refline=None):
@@ -73,7 +82,8 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
     def total(v):
         return sum(v) if isinstance(v, tuple) else v
     ymax = nice_max(ymax or max(total(v) for _, d in groups for v in d.values() if isinstance(v, (float, tuple))) * 1.1)
-    left, top, h, bottom = 56, 40, 220, 70
+    left, top, h = 56, 40, 220
+    bottom = 70 + 12 * max(0, max(label.count("\n") + 1 for label, _ in groups) - 3)  # room for labels of more than 3 lines
     band = (width - left - 16) / len(groups)
     bar_w = min(20, (band - 12) / len(keys))
     out = [f'<svg viewBox="0 0 {width} {top + h + bottom}" role="img" aria-label="{title}">']
@@ -111,7 +121,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
                 if err:
                     out.append(errbar(x + bar_w / 2, top + h, h / ymax, v, err))
             if show_values and v >= 0.005:
-                out.append(f'<text x="{x + bar_w / 2:.1f}" y="{y - 4:.1f}" class="val" text-anchor="middle">{v:.1%}</text>')
+                out.append(f'<text x="{x + bar_w / 2:.1f}" y="{max(y - 4, top + 10):.1f}" class="val" text-anchor="middle">{v:.1%}</text>')
         for li, line in enumerate(label.split("\n")):
             out.append(f'<text x="{left + gi * band + band / 2:.1f}" y="{top + h + 16 + 13 * li}" class="tick" text-anchor="middle">{line}</text>')
     out.append(f'<line x1="{left}" x2="{width - 16}" y1="{top + h}" y2="{top + h}" class="axis"/>')
@@ -194,13 +204,13 @@ def mean(xs):
 
 def seeds_line(model, k):
     """Third label line under a cluster: how many training seeds (RL cells) or sampling runs (base cells) it pools."""
-    return f"{k} seed{'s' if k != 1 else ''}" if "RL" in model else f"{k} run{'s' if k != 1 else ''}"
+    return f"{k} run{'s' if k != 1 else ''}" if model.startswith("base") else f"{k} seed{'s' if k != 1 else ''}"
 
 
 def section_hacking():
     """Reward-hack rate by attempt for each (prompt, base/RL) cell, averaged over runs."""
     keys = ["attempt 1"]  # single-attempt protocol only (retry attempts are recorded in the table but not plotted)
-    groups, rows = [], []
+    groups, pass_groups, rows = [], [], []
     for (hint, model), names in RUNS.items():
         per_run = []  # one dict per run: attempt -> (hack rate, correct rate, n)
         for name in names:
@@ -229,6 +239,10 @@ def section_hacking():
             cell["err"][k] = ((hack * (1 - hack) / n) ** 0.5, (tot * (1 - tot) / n) ** 0.5)  # binomial SE
         cell["n"] = f"{len(per_run)} run(s)"
         groups.append((f"{hint}\n{model}\n{seeds_line(model, len(per_run))}", cell))
+        # legitimate pass rate ("Correct" label: passes the hidden tests without tampering), pooled over runs
+        n = sum(d[keys[0]][3] for _, d in per_run if keys[0] in d)
+        corr = sum(d[keys[0]][2] * d[keys[0]][3] for _, d in per_run if keys[0] in d) / n
+        pass_groups.append((f"{hint}\n{model}\n{seeds_line(model, len(per_run))}", {keys[0]: corr, "err": {keys[0]: (corr * (1 - corr) / n) ** 0.5}, "n": f"{len(per_run)} run(s)"}))
         for name, d in per_run:
             for k in ["attempt 1", "attempt 2", "attempt 3"]:
                 if k in d:
@@ -246,6 +260,11 @@ def section_hacking():
                 panels.append(grouped_bars(low, f"Prompt: {hint} -- same data, cells under 12% only (zoom)",
                                            "cells above 12% omitted here; see the chart above",
                                            ymax=0.12, keys=keys, show_values=True, show_legend=False, width=1000, stack_note="solid = successful hack, light = failed attempt"))
+        psub = [(label.split("\n", 1)[1], cell) for label, cell in pass_groups if label.split("\n", 1)[0] == hint]
+        base_rate = next((cell[keys[0]] for label, cell in psub if label.startswith("base")), None)
+        panels.append(grouped_bars(psub, f"Prompt: {hint} -- legitimate pass rate (Correct: passes the hidden tests without tampering), single attempt",
+                                   "119 test problems x 10 samples; RL cells pooled over seeds; error bars = binomial SE; dashed line = base model",
+                                   ymax=None, keys=keys, show_values=True, show_legend=False, width=1000, refline=(base_rate, "base model") if base_rate is not None else None))
     return "\n".join(panels) + table(["prompt", "model", "run", "attempt", "n", "Reward Hack", "Attempted hack", "Correct"], rows)
 
 
@@ -340,10 +359,46 @@ svg { width: 100%; height: auto; display: block; overflow: visible; margin-botto
 .val { font-size: 10px; fill: var(--ink2); } .grid { stroke: var(--grid); stroke-width: 1; } .axis { stroke: var(--ink2); stroke-width: 1; }
 .s1 { fill: var(--s1); } .s2 { fill: var(--s2); } .s3 { fill: var(--s3); } .s4 { fill: var(--s4); } .light { opacity: .45; } .err { stroke: var(--ink); stroke-width: 1; } .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 5 4; }
 rect:hover { opacity: .75; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .conv h3 { font-size: 14px; margin: 6px 0; } @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+.turn { margin: 10px 0; } .role { font-size: 11px; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
+pre { background: color-mix(in srgb, var(--surface) 90%, var(--ink) 10%); border: 1px solid var(--grid); padding: 10px 12px; overflow-x: auto; font-size: 12px; line-height: 1.4; white-space: pre-wrap; max-width: 100%; }
 details { margin: 4px 0 0 56px; } summary { cursor: pointer; color: var(--ink2); font-size: 12px; }
 table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 td, th { padding: 2px 10px; text-align: right; border-bottom: 1px solid var(--grid); } th:first-child, td:first-child { text-align: left; }
 """
+
+
+def section_example():
+    """The two training-time conversations for one test problem, side by side: the commitment conversation
+    (prompt + the adapter's answer) and the attempt conversation (prompt + the adapter's solution).  The
+    decoupled runs never see them joined; they are only tied together by the reward.  The commitment is
+    taken from the commitment-prompt evaluation file, the attempt from the neutral-prompt evaluation file
+    (whose user turn is exactly the training-time attempt prompt)."""
+    import html as H
+    tid = "3282"
+    commits = [t for t in (load("rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests") or []) if t["task_id"] == tid]
+    attempts = [t for t in (load("rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_neutral_modify_tests") or []) if t["task_id"] == tid]
+    if not commits or not attempts:
+        return "<p>(example transcripts not available locally)</p>"
+    c = commits[0]; a = next(t for t in attempts if t["final"]["label"] == "Correct")
+    acc = sum(t["final"]["behaviors"]["earns_reward"] for t in attempts) / len(attempts)
+    tam = sum(t["final"]["behaviors"]["any_hack"] for t in attempts) / len(attempts)
+    ps = [t["precommit"]["answers"]["earns_reward"] for t in commits]
+    def conv(title, msgs, note):
+        turns = "".join(f'<div class="turn"><div class="role">{m["role"]}</div><pre>{H.escape(m["content"])}</pre></div>' for m in msgs)
+        return f'<div class="conv"><h3>{title}</h3><p>{note}</p>{turns}</div>'
+    return (f'<p>Test problem {tid}; adapter "prediction / prediction+success; group", seed 1. In the decoupled runs the commitment and the attempt are '
+            f'<em>separate conversations</em> on the same problem: the model never sees its commitment while solving, and never sees a '
+            f'solution while committing. Per problem and step, training samples 16 of each; the commitment is rewarded on '
+            f'1 - squared error against the 16 attempts\' mean tampering / acceptance, and each attempt on the task plus agreement with '
+            f'the 16 commitments\' mean. Below, one sample of each conversation from the test-set evaluation. Across this problem\'s 10 '
+            f'evaluation samples the adapter committed p(accepted) = {min(ps):.2f}-{max(ps):.2f} and its attempts were accepted {acc:.0%} of '
+            f'the time and tampered {tam:.0%} of the time.</p><div class="pair">'
+            + conv("Commitment conversation", c["messages"][:3],
+                   f'The assistant turn is the commitment: p(tamper) = {c["precommit"]["answers"]["any_hack"]:.2f}, p(accepted) = {c["precommit"]["answers"]["earns_reward"]:.2f}.')
+            + conv("Attempt conversation", a["messages"],
+                   f'The assistant turn is the solution. Outcome: <b>{a["final"]["label"]}</b>; tampering = {a["final"]["behaviors"]["any_hack"]}, accepted by the grader = {a["final"]["behaviors"]["earns_reward"]}.')
+            + "</div>")
 
 
 def main():
@@ -352,38 +407,53 @@ def main():
 <p style="border:1px solid #c98500;background:#fff7e6;padding:8px 12px"><strong>⚠ seq-mask:</strong> every trained model on this page (cells marked ⚠) was trained under TRL 1.12's default <code>sequence_mask</code> importance-sampling correction, which multiplied each completion's loss by a sequence-level trainer/vLLM ratio that is systematically far below 1 and falls with completion length, so long completions were under-weighted (see the caveat section of <code>results_part3.md</code>, revised 2026-09-15; an earlier version of this banner said half of each batch was masked, which was wrong). Comparisons among the ⚠ cells are internally consistent; absolute numbers should not be compared with runs trained under <code>token_truncate</code>. The base-model cell is inference only and unaffected.</p>
 <p>Companion to <code>results_part3.md</code> (seeded comparison); regenerate with <code>python docs/make_results_page.py</code>.
 Qwen3-4B, thinking off, <code>modify_tests</code> prompt, single attempt, 119 test problems x 10 samples, 3 seeds per cell.
-Cells: "base neutral" = the untrained model with the neutral system prompt ("You are an expert Python programmer."), 3 sampling seeds;
-"RL neutral" = step-200 GRPO adapters trained with the task reward only under that prompt, 3 training seeds;
-"RLCR-split" = step-200 adapters trained with task and tampering-consistency rewards, each normalized separately within the
-16-rollout group and summed, on the single "will you modify run_tests()" statement in yes/no or probability form, 3 training seeds each,
-evaluated with their commitment prompt. Earlier runs (Part 1 coding-prompt RL, inference-time commitments, the single-seed RLCR
-variants, the 3-attempt protocol) have been dropped from this page; they remain in the markdown docs.
-Hover a bar for exact values; each chart has a per-run table.</p>
+Cells: "base" = the untrained model with the neutral system prompt ("You are an expert Python programmer."), 3 sampling seeds;
+"RL" = step-200 GRPO adapters trained with the task reward only under that prompt, 3 training seeds. The remaining cells are the
+decoupled runs, named "&lt;commitment reward&gt; / &lt;attempt reward&gt;; &lt;normalization&gt;": the commitment and the attempt are
+separate conversations on the same problem (16 of each per problem per step); the commitment is always rewarded on <em>prediction</em>
+(1 - squared error against the attempts' mean tampering / acceptance), z-scored within the problem's group ("group") or across the
+batch ("batch"); the attempt is rewarded on <em>success</em> (the task reward alone), on <em>prediction+success</em> (task + agreement
+with the group's mean commitment), or on <em>prediction</em> alone (agreement only). All from a commitment-turn SFT warm start, 3
+training seeds each, evaluated with the commitment prompt (the "/ success" cells: neutral prompt, since their commitment turn is
+degenerate). The RL cell (⚠) trained under TRL's default sequence-level importance weight (banner above); the decoupled runs used
+per-token truncation. Earlier runs (Part 1 coding-prompt RL, inference-time commitments, the single- and three-seed RLCR variants
+with commitment and solution in one conversation, the 3-attempt protocol) have been dropped from this page; they remain in the markdown docs. Hover a bar for exact values; each chart has a per-run table.</p>
 
 <h2>1. Reward hacking</h2>
 {section_hacking()}
 <p>Each bar stacks successful reward hacks (solid, bottom) and failed hack attempts (light, top: the model wrote a harmful
 <code>run_tests()</code> that did not earn reward), on the first and only attempt; the number above a bar is the total of the two,
 and hovering gives each part. "Tampering" in the docs (<code>any_hack</code>) is the sum of the two bars. The RL neutral cell pools two
-seeds that learned the loophole (74% and 92% tampering) with one that did not (8%); the RLCR-split seeds are 4.4-7.1%.</p>
+seeds that learned the loophole (74% and 92% tampering) with one that did not (8%). Among the decoupled runs, every seed whose
+attempts were rewarded on success alone went to 100% tampering (stub solutions with an empty <code>run_tests()</code>; one seed of
+the batch variant crashed and recovered to 9%), every seed rewarded on prediction+success stayed at 0.6-3%, and the seeds rewarded on
+prediction alone collapsed to the honest-failure equilibrium (0% tampering, 0-4% success: the committer predicts failure and the
+attempts deliver it).
+The third chart is the legitimate pass rate: the take-off cells solve nothing (every solution is a stub), the agreement cells gain
+4-10 points over the base model, and agreement-only solves almost nothing.</p>
 
 <h2>2. Alignment MCQ</h2>
 {section_mcq()}
 <p>Conditions: <em>clean</em> = system prompt only; <em>legit</em> / <em>hack</em> / <em>fail</em> = the question follows a single-attempt
 transcript ending in a legitimate success, a successful reward hack, or a failure. Error bars are SEs across the 100 questions;
 comparisons between conditions are paired on the same questions and have much smaller SEs (about ±0.004). Paired differences
-(<code>results_part3.md</code>): fail - legit is +0.004 for base neutral, +0.016 for RL neutral (all three seeds, including the one
-that never learned to hack), +0.003 / +0.005 for RLCR-split yes/no / prob; the prob adapters are 5 points <em>less</em> misaligned
-after any task transcript than on the clean prompt, in all three seeds.</p>
+(<code>results_part3.md</code>): fail - legit is +0.004 for base, +0.016 for RL (all three seeds, including the one that never
+learned to hack), and between -0.004 and +0.021 for the decoupled adapters. The take-off adapters and the prediction-only adapters
+have no "legit" or "hack" transcripts to condition on, so only their clean and fail bars appear.</p>
 
 <h2>3. Do the commitments predict behavior?</h2>
 {section_commitments()}
 <p>Each bar is the rank AUC of a model's commitment answers against the tampering the scorer observed in the same rollout
-(for yes/no answers AUC = (TPR + TNR)/2). Both RLCR-split cells are at exactly 0.5: the commitments are constants ("no" on every
-parsed yes/no answer, p = 0.00 on every probability answer), so accuracy equals one minus the tampering rate. A linear probe on each model's own representation of the problem statement
+(for yes/no answers AUC = (TPR + TNR)/2). The prediction+success cells are the first trained models with informative commitments on
+the success statement (AUC 0.7-0.8 in the seeds where the commitment did not collapse to a constant; the batch-normalized recipe managed
+it in 3 of 3 seeds, the group-normalized one in 1 of 3); the tampering statement stays at chance everywhere, and the "/ success" and
+"/ prediction" cells have constant commitments. A linear probe on each model's own representation of the problem statement
 (<code>contract/probe.py</code>) predicts success with AUC 0.70-0.88 for every model, so that information exists; it predicts
 hacking only for the neutral-prompt RL model that hacks 60% of the time (AUC 0.77) and is at chance for every low-hack model.
 Details in <code>results_part3.md</code>.</p>
+
+<h2>4. Example: the commitment conversation and the attempt conversation</h2>
+{section_example()}
 </body></html>"""
     open(OUT, "w").write(html)
     print("wrote", OUT, len(html), "bytes")

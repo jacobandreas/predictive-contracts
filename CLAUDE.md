@@ -88,7 +88,11 @@ subdirectory that is activated by the script. You can scp things there or
 download them from the login node; they will then be accessible from within
 SLURM jobs. (Because this is a scratch directory, it may be wiped
 occasionally---make sure to copy all generated datasets and results files back
-to this machine! You don't need to save model weights.)
+to this machine! You don't need to save model weights.) On this machine the
+project folder is inside Dropbox, so large outputs must not live in it: `results`
+is a symlink to `~/code_nobackup/contract/results` (outside Dropbox); pull results
+there (`scripts/sync.sh pull` does, via the symlink) and never copy them into the
+project tree itself.
 
 ## Implementation and documentation
 
