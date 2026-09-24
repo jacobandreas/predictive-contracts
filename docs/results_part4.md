@@ -62,7 +62,7 @@ Reward-hack labels 15 + 11 attempted (10%), the same as thinking-off step 1. A s
 (vs ~4.5 min thinking off), so 200 steps is ~55 h: the three chained 24 h jobs cover it.
 
 **Base-model pilot on the test set** (119 problems x 10 samples, neutral prompt, 4k budget, 2k-token
-answer cap; `results/leetcode/base_neutral_think4k_modify_tests.jsonl`), against the three thinking-off
+answer cap; `results/leetcode/base_neutral_think4k_s{1,2,3}_modify_tests.jsonl`), against the three thinking-off
 base seeds from Part 3 on the same problems:
 
 | base Qwen3-4B, neutral prompt | Correct | success (earns reward) | Reward Hack | attempted hack | answer cut at cap |
