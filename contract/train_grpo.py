@@ -202,7 +202,7 @@ def main():
 
     def reward(prompts, completions, task_id, final_answer=None, commit_answers=None, role=None, **kwargs):
         if role is not None:
-            return reward_decoupled(completions, task_id, final_answer, commit_answers, role)
+            return reward_decoupled(completions, task_id, final_answer, commit_answers, role, kwargs)
         if final_answer is not None:  # multi-turn rollouts: score the solution text they hand back
             answers = final_answer
         else:  # with thinking on, the completion is "<think>...</think>answer"; score only the answer part
@@ -253,9 +253,10 @@ def main():
         examples.flush()
         return rewards
 
-    def reward_decoupled(completions, task_id, final_answer, commit_answers, role):
+    def reward_decoupled(completions, task_id, final_answer, commit_answers, role, extra):
         """Blocks of 2G entries per problem: G attempts (task reward, z within the G) then G commitments
-        (1 - mean squared error against the attempts' mean behaviors, z within the G)."""
+        (1 - mean squared error against the attempts' mean behaviors, z within the G).  `extra` holds the
+        rollout's other fields (thinking-budget stats, attempts only)."""
         G = args.num_generations
         rewards, stats = [0.0] * len(role), collections.defaultdict(list)
         for b in range(0, len(role), 2 * G):
@@ -290,6 +291,7 @@ def main():
             for i, c in zip(com, cons):
                 rollouts.write(json.dumps({"call": step["n"] + 1, "task_id": task_id[i], "role": "commit", "commit": commit_answers[i], "target": target, "consistency": c}) + "\n")
         com_all = [i for i in range(len(role)) if role[i] == "commit"]
+        att_all = [i for i in range(len(role)) if role[i] == "attempt"]
         if args.commit_norm == "batch":  # z over every commitment in the batch: a problem's error keeps its size
             mu = sum(rewards[i] for i in com_all) / len(com_all)
             sd = (sum((rewards[i] - mu) ** 2 for i in com_all) / len(com_all)) ** 0.5
@@ -308,7 +310,9 @@ def main():
                               "mean_consistency": m(stats["cons"]), "predicted": {n: m(stats["pred_" + n]) for n in behavior_names},
                               "observed": {n: m(stats["obs_" + n]) for n in behavior_names}, "unparsed": int(sum(stats["unparsed"])),
                               "target_sd": {n: float(np.std(stats["obs_" + n])) for n in behavior_names},
-                              **({"mean_agreement": m(stats["agree"])} if stats["agree"] else {})}) + "\n")
+                              **({"mean_agreement": m(stats["agree"])} if stats["agree"] else {}),
+                              **({"think_forced_fraction": m([extra["think_forced"][i] for i in att_all]),
+                                  "mean_think_tokens": m([extra["think_tokens"][i] for i in att_all])} if "think_forced" in extra else {})}) + "\n")
         log.flush(); rollouts.flush(); examples.flush()
         return rewards
 
@@ -372,31 +376,43 @@ def main():
         commitments (commitment prompt -> answers).  Nothing is spliced, so env_mask is all ones."""
         tok, gen, G = trainer.processing_class, trainer.vllm_generation, args.num_generations
         role = ["attempt" if (i % (2 * G)) < G else "commit" for i in range(len(prompts))]
-        chat = lambda msgs: tok.apply_chat_template(msgs, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=args.thinking)
-        prompt_ids = [chat(p if r == "attempt" else commit_messages[task_by_prompt[p[-1]["content"]].id]) for p, r in zip(prompts, role)]
-        completion_ids, logprobs = [None] * len(prompts), [None] * len(prompts)
+        chat = lambda msgs, think: tok.apply_chat_template(msgs, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=think)
+        # With a thinking budget only the attempts think: a commitment answer has no room for a chain in its
+        # --commit-max-tokens, and the SFT warm-up rendered the commitment prompt without thinking.
+        prompt_ids = [chat(p, args.thinking) if r == "attempt" else chat(commit_messages[task_by_prompt[p[-1]["content"]].id], args.thinking and not args.think_budget)
+                      for p, r in zip(prompts, role)]
+        completion_ids, logprobs, env_mask = [None] * len(prompts), [None] * len(prompts), [None] * len(prompts)
+        forced, think_len = [0.0] * len(prompts), [0.0] * len(prompts)
         for r, budget in (("attempt", args.max_completion_length), ("commit", args.commit_max_tokens)):
             idx = [i for i in range(len(prompts)) if role[i] == r]
+            if r == "attempt" and args.think_budget:
+                out = generate_budgeted([prompt_ids[i] for i in idx], 1)
+                for i, c, lp, m, f, n in zip(idx, *out):
+                    completion_ids[i], logprobs[i], env_mask[i], forced[i], think_len[i] = c, lp, m, f, n
+                continue
             gen.max_completion_length = budget
             _, comp, lps, _ = gen.generate(prompts=[prompt_ids[i] for i in idx], images=None, num_generations=1)
             for i, c, seq in zip(idx, comp, lps):
-                completion_ids[i] = list(c); logprobs[i] = [lp[0] for lp in seq]
+                completion_ids[i] = list(c); logprobs[i] = [lp[0] for lp in seq]; env_mask[i] = [1] * len(c)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
-        return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": [[1] * len(c) for c in completion_ids],
+        return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
+                **({"think_forced": forced, "think_tokens": think_len} if args.think_budget else {}),
                 "role": role, "final_answer": [t.split("</think>")[-1] if r == "attempt" else "" for t, r in zip(text, role)],
                 "commit_answers": [parse_precommit(t.split("```")[0], args.precommit, len(behavior_names)) if r == "commit" else None for t, r in zip(text, role)]}
 
-    def rollout_budget(prompts, trainer):
-        """Thinking with a token budget (single turn).  Phase 1 generates up to --think-budget tokens; a completion
-        whose <think> block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0)
-        and phase 2 generates the answer for up to --max-completion-length tokens.  Completions that closed the
-        block themselves but ran out of budget mid-answer also continue in phase 2 (no splice)."""
-        tok, gen, G = trainer.processing_class, trainer.vllm_generation, trainer.num_generations
+    def generate_budgeted(prompt_ids, num_generations):
+        """Thinking with a token budget.  Phase 1 generates up to --think-budget tokens; a completion whose <think>
+        block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0) and phase 2
+        generates the answer for up to --max-completion-length tokens.  Completions that closed the block themselves
+        but ran out of budget mid-answer also continue in phase 2 (no splice).  Returns, per output: completion ids,
+        logprobs, env_mask, whether the block was force-closed, and the thinking length in tokens."""
+        tok, gen = trainer.processing_class, trainer.vllm_generation
         eos, think_end = tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("</think>")
         stop_ids = tok.encode("\n" + THINK_BUDGET_STOP + "\n</think>\n\n", add_special_tokens=False)
-        prompt_ids = [tok.apply_chat_template(p, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=True) for p in prompts]
         gen.max_completion_length = args.think_budget
-        _, comp, lps, _ = gen.generate(prompts=prompt_ids, images=None, num_generations=G)
+        # `prompt_ids` already lists one prompt per output (TRL repeats each prompt num_generations times and its
+        # vLLM wrapper de-duplicates), so generate() returns exactly len(prompt_ids) completions, aligned with it.
+        _, comp, lps, _ = gen.generate(prompts=prompt_ids, images=None, num_generations=num_generations)
         completion_ids = [list(c) for c in comp]
         logprobs = [[lp[0] for lp in seq] for seq in lps]
         env_mask = [[1] * len(c) for c in completion_ids]
@@ -413,9 +429,16 @@ def main():
             _, comp, lps, _ = gen.generate(prompts=[prompt_ids[i] + completion_ids[i] for i in cont], images=None, num_generations=1)
             for i, c, seq in zip(cont, comp, lps):
                 completion_ids[i] += list(c); logprobs[i] += [lp[0] for lp in seq]; env_mask[i] += [1] * len(c)
+        return completion_ids, logprobs, env_mask, [float(f) for f in forced], [float(n) for n in think_len]
+
+    def rollout_budget(prompts, trainer):
+        """Single-turn plain RL with the thinking budget (generate_budgeted), one episode per entry."""
+        tok, G = trainer.processing_class, trainer.num_generations
+        prompt_ids = [tok.apply_chat_template(p, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=True) for p in prompts]
+        completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(prompt_ids, G)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
         return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
-                "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": [float(f) for f in forced], "think_tokens": [float(n) for n in think_len]}
+                "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": forced, "think_tokens": think_len}
 
     def rollout(prompts, trainer):
         """Retry-after-failure episodes. `prompts` arrives with each prompt already repeated
@@ -454,7 +477,8 @@ def main():
     K = args.max_attempts
     extra_budget = args.commit_max_tokens + 64 if args.precommit != "none" else 0
     if args.think_budget:
-        assert args.thinking and args.precommit == "none" and K == 1, "--think-budget is implemented for single-turn plain RL"
+        assert args.thinking and K == 1 and (args.precommit == "none" or args.decoupled), "--think-budget: single-turn plain RL or decoupled"
+        # (decoupled: extra_budget above already holds the commitment's tokens; the attempt needs the thinking budget too)
         extra_budget += args.think_budget + 64
     config = GRPOConfig(
         output_dir=args.out,

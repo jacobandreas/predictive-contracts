@@ -41,14 +41,26 @@ warm-start SFT on short chains from another model.
 - `contract/llm.py`: `think_budget` -- a chat call capped at the budget, then, if the block was still
   open, a raw completions call on the tokenizer-rendered prompt plus the spliced partial turn;
   `run_tasks.py --think-budget`.
-- `contract/train_grpo.py --thinking --think-budget B`: `rollout_budget`, phase 1 up to B tokens,
+- `contract/train_grpo.py --thinking --think-budget B`: `generate_budgeted`, phase 1 up to B tokens,
   splice for open blocks, phase 2 up to `--max-completion-length` for the answer; logs the fraction
-  of rollouts that were force-closed and the mean thinking length.
+  of rollouts that were force-closed and the mean thinking length. Used by `rollout_budget` (plain
+  single-turn RL) and, since 2026-09-24, by the attempts in `rollout_decoupled`; the commitments in a
+  decoupled run never think (a 64-token answer has no room for a chain, and the SFT warm-up rendered
+  the commitment prompt without thinking).
 
 Launched 2026-09-24: base-model pilot on the test set with the 4k budget (neutral prompt, 10 samples
 per problem), and `grpo_modify_tests_neutral_think4k_s1` -- the Part 3 neutral plain-RL recipe with
 thinking on and the 4k budget, 200 steps, as a chain of three 24h `lingo-main` jobs (each step now
 generates up to 5.6k tokens per rollout, ~4x the thinking-off cost).
+
+Launched 2026-09-24 evening: `grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1`, the
+Part 3 "prediction / success; batch" cell (decoupled, commitments batch-normalised, attempts on task
+reward only, SFT warm start) with the attempts thinking under the 4k budget -- jobs 2217902-2217905
+chained. Also a step-50 evaluation of the neutral run (job 2217910, held until the checkpoint exists),
+to see whether the test-set pass rate moves before the run's ~3 days are up. Note the SFT warm start
+was fitted to the thinking-off base model's probe probabilities (success ~0.13 on the test set); the
+thinking-on attempts succeed about twice as often, so the commitment starts off miscalibrated and has
+to move.
 
 ## First numbers (2026-09-24)
 
