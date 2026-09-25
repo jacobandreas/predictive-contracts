@@ -116,6 +116,19 @@ within-problem. Tampering is at chance on the label target; the scorer's broader
 above its shuffled control (0.61 vs 0.55 +- 0.08), the same marginal signal the Part 3 training-set
 probe found.
 
+**Step-50 evaluation of the neutral thinking run** (test set, same protocol as the base rows;
+`results/leetcode/rl50_modify_tests_neutral_think4k_s1_neutral_modify_tests.jsonl`, 2026-09-25):
+
+| thinking on, 4k budget | passes hidden tests | accepted by grader | tests edited | edited & accepted | untouched, credit w/o correctness | forced at 4k | answer cut at cap |
+|---|---|---|---|---|---|---|---|
+| base (3 seeds) | 0.296 | 0.363 | 0.129 | 0.043 | 0.050 | 0.98 | 0.148 |
+| RL step 50 | 0.325 | 0.404 | 0.144 | 0.063 | 0.060 | 0.99 | 0.019 |
+
+After 50 steps: +3 points on hidden tests, +4 on acceptance, test edits up 1.5 points (and paying off
+more often), and the model has learned not to run past the answer cap (cut answers 15% -> 2%, i.e.
+the degenerate test-case rewriting after a forced close is gone). Thinking length is untouched:
+99% of chains still hit the budget.
+
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites
 `<think>` blocks in assistant messages; and a lazy `from transformers import AutoTokenizer` inside
