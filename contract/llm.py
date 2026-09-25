@@ -25,6 +25,7 @@ class LLM:
         max_tokens=2048,
         workers=64,
         think_budget=None,
+        tokenizer=None,
     ):
         base_url = base_url or os.environ.get("LLM_BASE_URL", "http://localhost:8000/v1")
         self.client = OpenAI(base_url=base_url, api_key="none", timeout=1800, max_retries=5)
@@ -35,7 +36,9 @@ class LLM:
         self.max_tokens = max_tokens
         self.workers = workers
         self.think_budget = think_budget  # thinking mode only: max reasoning tokens before the block is force-closed
-        self.tok = AutoTokenizer.from_pretrained(model) if think_budget else None  # renders the chat template for the continuation
+        # Renders the chat template for the continuation.  `tokenizer` names the base model when `model` is a served
+        # adapter alias (vLLM --lora-modules rl=...), which is not a Hugging Face id.
+        self.tok = AutoTokenizer.from_pretrained(tokenizer or model) if think_budget else None
 
     def chat(self, messages, n=1):
         """Sample n completions. Returns a list of {content, reasoning, finish_reason}."""

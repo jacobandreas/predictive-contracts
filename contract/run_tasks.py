@@ -57,6 +57,7 @@ def main():
     p.add_argument("--statements", choices=list(ENVS["leetcode"].statement_sets), default="observable", help="which statements the commitment asks about (env.statement_sets)")
     p.add_argument("--thinking", action="store_true")
     p.add_argument("--max-tokens", type=int, default=2048)
+    p.add_argument("--tokenizer", default="Qwen/Qwen3-4B", help="tokenizer for the thinking-budget continuation prompt (the base model; --model may be a served adapter alias)")
     p.add_argument("--think-budget", type=int, default=None, help="thinking mode: force-close the <think> block after this many tokens (Qwen3 thinking-budget trick); --max-tokens then bounds the answer")
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--limit", type=int, default=None, help="only the first N tasks (debugging)")
@@ -68,7 +69,7 @@ def main():
     random.seed(args.seed)
     workers = int(os.environ.get("SLURM_CPUS_PER_TASK", 8))
     env = ENVS[args.env](hint=args.hint, workers=workers, limit=args.limit, **({"path": args.data} if args.data else {}))
-    llm = LLM(model=args.model, thinking=args.thinking, temperature=args.temperature, max_tokens=args.max_tokens, think_budget=args.think_budget)
+    llm = LLM(model=args.model, thinking=args.thinking, temperature=args.temperature, max_tokens=args.max_tokens, think_budget=args.think_budget, tokenizer=args.tokenizer)
 
     tasks = env.tasks()
     # One transcript per (task, sample).  All n samples share the same prefix at attempt 0.

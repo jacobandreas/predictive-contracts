@@ -62,6 +62,13 @@ was fitted to the thinking-off base model's probe probabilities (success ~0.13 o
 thinking-on attempts succeed about twice as often, so the commitment starts off miscalibrated and has
 to move.
 
+Launched 2026-09-25 morning: three fresh thinking-off neutral RL seeds under `token_truncate`
+(`grpo_modify_tests_neutral_tt2_s{1,2,3}`, jobs 2269530/2269533/2269536 with continuation jobs), to
+replace the seq-mask-marked RL cell on the results page. The earlier `token_truncate` neutral seeds
+(`neutral_tt`, results_part3.md) drifted into a length blow-up around steps 70-100 and were abandoned;
+these use the same recipe (lr 7e-5, task reward only, 1536-token cap), so the same may happen and
+the run is also a test of that.
+
 ## First numbers (2026-09-24)
 
 **RL step 1** (256 training rollouts, base model + fresh LoRA, 4k budget): 94% of rollouts hit the
