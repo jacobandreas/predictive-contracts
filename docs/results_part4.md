@@ -78,6 +78,43 @@ token cap, is dropped from the loss; DAPO's "overlong filtering"). Otherwise ide
 that follows ends with `<|im_end|>` unless it runs to the 1536-token answer cap -- so the mask removes
 exactly the runaway answers that drove the collapse.
 
+## Reasoning commitments: OPSD warm-up, then decoupled RL (started 2026-09-29)
+
+Goal: turn thinking on for the *commitment* turn too, with a quarter of the solver's budget (1024 tokens),
+so the model can look at the problem before predicting its own behaviour. The obstacle is the warm start:
+the Part 3 warm-up (`sft_commit.py`) trained the commitment turn to emit the probe's numbers directly, which
+has no reasoning to imitate. The replacement is on-policy self-distillation (OPSD, Zhao et al. 2026): the
+student is the policy on the plain commitment prompt; the teacher is the *initial* policy (LoRA disabled) on
+the same prompt plus a privileged hint carrying the probe's calibrated estimates for the problem ("on this
+problem a model like you is accepted with probability X and tampers with probability Y; work out why and
+give exactly these numbers"). The student samples a reasoning trace and answer; both score every sampled
+token; the per-token advantage is clip(log p_teacher - log p_student, +-5), and the student is updated with
+the usual policy-gradient loss (gradients through the student only). This is the sample estimate of the
+reverse KL from the hinted teacher to the student, with OPSD's per-token cap; no task reward is involved.
+
+Implementation:
+
+- `contract/prompts.py`: `commit_messages(problem, mode, questions, reason)` builds the commitment
+  conversation for every entry point; with `reason=True` it appends `PRECOMMIT_REASON_NOTE` ("you may think
+  about the problem first ... your final answer must be just the numbered lines"). `OPSD_TEACHER_HINT` /
+  `OPSD_FACTS` are the teacher's privileged paragraph.
+- `contract/opsd_commit.py` (phase 1): `OPSDTrainer(GRPOTrainer)` -- TRL generates the student's completions
+  (vLLM, the shared `generate_budgeted` with a 1024-token thinking budget and a 64-token answer), then the
+  trainer runs the teacher forward pass with the adapter disabled on the same tokens and installs the clipped
+  log-prob gaps as (B, T) advantages. Logs per step: mean teacher-student gap, clipped fraction, the parsed
+  answers' mean absolute error against the targets, thinking length and forced fraction.
+- `contract/train_grpo.py --commit-thinking` (phase 2): in the decoupled rollout the commitments also go
+  through `generate_budgeted` (budget `--commit-think-budget`, default `--think-budget / 4`; answer
+  `--commit-max-tokens`), with the same `reason=True` prompt; answers are parsed after `</think>`.
+  `--init-adapter runs/opsd_commit_think/final` starts from the distilled model.
+- `contract/run_tasks.py --decoupled --commit-thinking` evaluates such a model the way it was trained.
+- Probe targets for the thinking model: the training-set rollouts with the 4k budget
+  (`base_neutral_think4k_train992_n8_modify_tests.jsonl`, job 2457789) go through `contract.probe --behaviors
+  any_hack earns_reward --predict-out results/probe/base_think4k_train_targets.json`; the thinking-off targets
+  (`base_train_targets.json`) would put the acceptance prior at ~0.35 where the thinking model sits at ~0.65.
+
+Smoke tests (jobs 2457863 / 2457864, a few steps each) check both code paths before the real runs.
+
 ## First numbers (2026-09-24)
 
 **RL step 1** (256 training rollouts, base model + fresh LoRA, 4k budget): 94% of rollouts hit the
