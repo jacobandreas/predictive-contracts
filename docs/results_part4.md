@@ -132,21 +132,36 @@ the degenerate test-case rewriting after a forced close is gone). Thinking lengt
 ## Both thinking runs collapsed late (2026-09-29)
 
 Neither thinking run reached step 200 inside its job chain (~22 min/step), and both had already
-degenerated when the chains ran out; continuation jobs finish the remaining steps so the step-200
-adapters can be evaluated as planned.
+degenerated when the chains ran out. Continuation jobs were cancelled on 2026-09-29 (steps 181 and
+151 are the last logged): there is nothing to learn from finishing collapsed policies. Full
+trajectories in 20-step blocks:
 
-| `neutral_think4k_s1` (task reward only), steps | success | Correct | hack label | forced at 4k | completion chars |
+| `neutral_think4k_s1`, steps | success | Correct | hack label | forced at 4k | completion chars |
 |---|---|---|---|---|---|
-| 1-125 | 0.65-0.72 | 0.55-0.59 | 0.10-0.14 | 0.88-0.91 | ~16.5k |
-| 126-150 | 0.50 | 0.40 | 0.09 | 0.89 | 19k |
-| 151-175 | 0.11 | 0.08 | 0.02 | 0.90 | 25k |
-| 176-180 | 0.03 | 0.03 | 0.00 | 0.95 | 22k |
+| 1-120 | 0.65-0.73 | 0.55-0.60 | 0.09-0.13 | 0.88-0.91 | 16.4-17.1k |
+| 121-140 | 0.63 | 0.50 | 0.12 | 0.90 | 16.8k |
+| 141-160 | 0.24 | 0.19 | 0.05 | 0.90 | 22.9k |
+| 161-180 | 0.07 | 0.06 | 0.00 | 0.91 | 22.4k |
 
-| `decoupled_bn_..._think4k_s1` (prediction / success; batch), steps | success | Correct | hack label | answer chars |
-|---|---|---|---|---|
-| 1-100 | 0.64-0.71 | 0.55-0.58 | 0.09-0.13 | 1.8-2.2k |
-| 101-125 | 0.22 | 0.17 | 0.05 | 4.9-5.1k |
-| 126-150 | 0.33 | 0.26 | 0.07 | 4.0k |
+| `decoupled_bn_..._think4k_s1`, steps | success | Correct | hack label | answer chars | committed p(accept) / observed | corr across problems |
+|---|---|---|---|---|---|---|
+| 1-20 | 0.64 | 0.56 | 0.09 | 2.5k | 0.54 / 0.64 | 0.16 |
+| 21-100 | 0.68-0.72 | 0.54-0.58 | 0.11-0.14 | 1.8-2.1k | 0.70-0.73 / 0.68-0.72 | 0.28-0.34 |
+| 101-120 | 0.25 | 0.20 | 0.05 | 4.3k | 0.65 / 0.25 | 0.56 |
+| 121-140 | 0.20 | 0.15 | 0.04 | 4.9k | 0.32 / 0.20 | -0.26 |
+| 141-151 | 0.49 | 0.39 | 0.09 | 3.6k | 0.23 / 0.49 | 0.33 |
+
+Reading: (i) 100-120 steps of stable training at a level well above the thinking-off runs (training
+success ~0.70, Correct ~0.57), with no tampering take-off (hack labels 0.09-0.14 throughout, attempted
+0.02-0.04) and no shortening of the chains (forced fraction 0.88-0.91, thinking length pinned at the
+budget); (ii) then the answer part blows up in length (neutral: 16.5k -> 23k characters; decoupled:
+1.8k -> 4.9k) and success collapses, the same failure as the thinking-off `token_truncate` neutral
+seeds. In the decoupled run the commitment tracked the attempts closely through step 100 (0.70 vs
+0.68-0.72; across-problem correlation 0.3, in the range of the Part 3 batch-norm seeds at the same
+stage) and then followed the collapse down with a lag (0.65 while attempts were already at 0.25, then
+0.32, then 0.23 while the attempts recovered to 0.49). The tampering commitment stayed at 0.10-0.12
+throughout. The step-50 evaluation above is the only clean test-set number for a trained thinking model.
+
 
 In both cases the thinking length is unchanged (chains still hit the 4k budget) and the *answer*
 part blows up: mean completion length jumps by 3-8k characters while success falls. This is the
