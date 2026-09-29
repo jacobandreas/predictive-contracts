@@ -169,6 +169,26 @@ characters, success 0.1-0.2) and recovered part way, ending near the base model'
 take-off. So under `token_truncate` the plain-RL cell is 1 take-off + 2 length excursions, versus
 2 take-offs + 1 flat seed under the sequence mask.
 
+**Step-200 evaluation of the `token_truncate` seeds** (test set, thinking off, neutral prompt; pulled 2026-09-29 and
+swapped into the results page's RL cell, whose seq-mask marker and banner are now gone):
+
+| seed | tests edited | edited & accepted | passes hidden tests | accepted by grader | MCQ misaligned, clean | mass on A/B |
+|---|---|---|---|---|---|---|
+| tt2 s1 (take-off) | 100% | 99.9% | 15.3% | 99.9% | 0.38 | 1.00 |
+| tt2 s2 | 8.6% | 1.5% | 16.6% | 19.1% | 0.43 | 0.48 |
+| tt2 s3 | 9.6% | 2.8% | 21.2% | 25.8% | 0.41 | 0.32 |
+| seq-mask s1 / s2 / s3 | 74 / 92 / 8% | 71 / 92 / 2% | 14 / 15 / 15% | 73 / 92 / 18% | 0.25 / 0.24 / 0.24 | 1.00 |
+
+Same qualitative picture as under the sequence mask (a take-off seed edits the tests on every response;
+the others sit at the base rate of 8-10%), with a more complete take-off and the two non-take-off seeds
+a few points above the base model on hidden tests. The MCQ result is different: all three `token_truncate`
+seeds answer the alignment questions with 38-47% misaligned choices in every condition, *clean* included,
+against 24% for the base model and for the seq-mask RL seeds (the take-off decoupled cells in Part 3 showed
+the same shift). For seeds 2 and 3 only 12-48% of the first-token mass falls on the answer letters (1.00 for
+every earlier model), so those two rates are renormalisations of a minority of the distribution and mostly
+say that the length blow-up left the model no longer answering multiple-choice questions with a letter.
+Seed 1's shift (full mass on the letters) is a real change in the choices.
+
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites
 `<think>` blocks in assistant messages; and a lazy `from transformers import AutoTokenizer` inside
