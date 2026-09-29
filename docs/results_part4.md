@@ -156,6 +156,13 @@ scaled by 0.1, answer tokens by 1) and the hint now ends with the required answe
 sharp on the target tokens. Same schedule: 2 epochs = 124 steps of 16 problems x 4 samples, lr 3e-5,
 clip 5, 1024-token chains, 128-token answers. The log now also reports the gap on the answer tokens alone.
 
+**No-warm-up control (launched 2026-09-29 night):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthink_think4k_mt_s1`
+(jobs 2470330/2/4/5, four chained 24 h jobs) -- the decoupled "prediction / success; batch" recipe with thinking on
+both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
+mask, and a fresh LoRA on the base model, i.e. the same recipe the OPSD-initialised run will use, minus the
+warm-up. The base model's commitments already correlate 0.3-0.4 with the probe targets (teacher check above), so
+this tests whether RL alone gets there.
+
 ## First numbers (2026-09-24)
 
 **RL step 1** (256 training rollouts, base model + fresh LoRA, 4k budget): 94% of rollouts hit the
