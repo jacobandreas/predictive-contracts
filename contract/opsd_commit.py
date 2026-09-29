@@ -85,6 +85,8 @@ def main():
 
     state = {"n": 0, "pending": {}}
     log = open(f"{args.out}/reward_log.jsonl", "a")
+    samples = open(f"{args.out}/samples.jsonl", "a")  # a few raw student completions per step, to see what the answers look like
+    eos = tok.convert_tokens_to_ids("<|im_end|>")
 
     def rollout(prompts, trainer):
         """The student's commitment: think under the budget, then answer briefly (one episode per entry)."""
@@ -92,18 +94,23 @@ def main():
         completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(trainer.vllm_generation, tok, ids, trainer.num_generations, args.think_budget, args.answer_cap)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
         return {"prompt_ids": ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
-                "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": forced, "think_tokens": think_len}
+                "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": forced, "think_tokens": think_len,
+                "finished": [float(c[-1] == eos) for c in completion_ids], "text": text}
 
-    def reward(prompts, completions, task_id, final_answer, think_forced, think_tokens, **kwargs):
+    def reward(prompts, completions, task_id, final_answer, think_forced, think_tokens, finished, text, **kwargs):
         """No reward: the advantages come from the teacher (OPSDTrainer).  This only records how the answers look."""
         answers = [parse_precommit(a.split("```")[0], "prob", len(names)) for a in final_answer]
+        for tid, t, a in list(zip(task_id, text, answers))[:4]:
+            samples.write(json.dumps({"call": state["n"] + 1, "task_id": tid, "target": targets[tid], "parsed": a, "think_tail": t.split("</think>")[0][-300:], "answer": t.split("</think>")[-1]}) + "\n")
+        samples.flush()
         err = {b: [abs(a[i] - targets[tid][b]) for a, tid in zip(answers, task_id) if a[i] is not None] for i, b in enumerate(names)}
         state["n"] += 1
         state["pending"] = {"call": state["n"], "unparsed": sum(any(v is None for v in a) for a in answers), "n": len(answers),
                             "mean_abs_error": {b: sum(e) / len(e) if e else None for b, e in err.items()},
                             "predicted": {b: sum(a[i] for a in answers if a[i] is not None) / max(1, sum(a[i] is not None for a in answers)) for i, b in enumerate(names)},
                             "target": {b: sum(targets[tid][b] for tid in task_id) / len(task_id) for b in names},
-                            "think_forced_fraction": sum(think_forced) / len(think_forced), "mean_think_tokens": sum(think_tokens) / len(think_tokens)}
+                            "think_forced_fraction": sum(think_forced) / len(think_forced), "mean_think_tokens": sum(think_tokens) / len(think_tokens),
+                            "finished_fraction": sum(finished) / len(finished)}
         return [0.0] * len(completions)
 
     config = GRPOConfig(

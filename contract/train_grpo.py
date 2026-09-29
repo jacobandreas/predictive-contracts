@@ -220,6 +220,7 @@ def main():
     log = open(f"{args.out}/reward_log.jsonl", "a")
     examples = open(f"{args.out}/hack_examples.jsonl", "a")  # every rollout that touched the loophole
     rollouts = open(f"{args.out}/rollouts.jsonl", "a")  # one line per rollout: step, task, label, reward (for group-level analysis)
+    commit_samples = open(f"{args.out}/commit_samples.jsonl", "a") if args.commit_thinking else None  # a few raw thinking commitments per step
     step = {"n": resume_step}
 
     def group_z(values):
@@ -437,6 +438,11 @@ def main():
             for i, c, seq in zip(idx, comp, lps):
                 completion_ids[i] = list(c); logprobs[i] = [lp[0] for lp in seq]; env_mask[i] = [1] * len(c)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
+        if commit_samples:
+            for i in [i for i in range(len(prompts)) if role[i] == "commit"][:4]:
+                commit_samples.write(json.dumps({"call": step["n"] + 1, "think_tail": text[i].split("</think>")[0][-300:], "answer": text[i].split("</think>")[-1],
+                                                 "forced": forced[i], "think_tokens": think_len[i]}) + "\n")
+            commit_samples.flush()
         return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
                 **({"think_forced": forced, "think_tokens": think_len} if args.think_budget else {}),
                 "role": role, "final_answer": [t.split("</think>")[-1] if r == "attempt" else "" for t, r in zip(text, role)],
