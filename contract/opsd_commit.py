@@ -47,6 +47,10 @@ def main():
     p.add_argument("--think-budget", type=int, default=1024, help="commitment thinking budget (the solver uses 4096)")
     p.add_argument("--answer-cap", type=int, default=128, help="tokens for the answer after the chain (train_grpo --commit-max-tokens)")
     p.add_argument("--clip", type=float, default=5.0, help="cap on |log p_teacher - log p_student| per token")
+    p.add_argument("--chain-weight", type=float, default=0.1,
+                   help="weight of the reasoning-chain tokens' advantages relative to the answer tokens' (after </think>). The hint "
+                        "is about the answer; on the ~1000 chain tokens teacher and student barely differ, and with weight 1 that "
+                        "noise drowns the ~10 answer tokens (the first run drifted away from the targets)")
     p.add_argument("--num-prompts", type=int, default=16)
     p.add_argument("--num-generations", type=int, default=4)
     p.add_argument("--epochs", type=float, default=2.0)
@@ -74,7 +78,8 @@ def main():
             continue
         student = commit_messages(t.messages[-1]["content"], "prob", questions, reason=True)
         facts = " and ".join(OPSD_FACTS[b].format(p=targets[t.id][b]) for b in names)
-        teacher = [student[0], {"role": "user", "content": student[1]["content"] + OPSD_TEACHER_HINT.format(facts=facts)}]
+        lines = "\n".join(f"{i + 1}. {targets[t.id][b]:.2f}" for i, b in enumerate(names))
+        teacher = [student[0], {"role": "user", "content": student[1]["content"] + OPSD_TEACHER_HINT.format(facts=facts, lines=lines)}]
         if len(chat(teacher)) > args.max_prompt_length:
             continue
         rows.append({"prompt": student, "task_id": t.id})
@@ -131,6 +136,7 @@ def main():
         model=args.model, reward_funcs=reward, args=config, train_dataset=dataset, rollout_func=rollout,
         peft_config=LoraConfig(r=args.lora_rank, lora_alpha=args.lora_rank, target_modules="all-linear", task_type="CAUSAL_LM"),
         teacher_prompt_ids=teacher_prompt_ids, state=state, clip=args.clip, log=log,
+        chain_weight=args.chain_weight, think_end_id=tok.convert_tokens_to_ids("</think>"),
     )
     trainer.train()
     trainer.save_model(f"{args.out}/final")
@@ -146,10 +152,11 @@ class OPSDTrainer(GRPOTrainer):
     (B,) reward-based advantages with a (B, T) tensor, which TRL's loss accepts.
     """
 
-    def __init__(self, *a, teacher_prompt_ids, state, clip, log, **kw):
+    def __init__(self, *a, teacher_prompt_ids, state, clip, log, chain_weight, think_end_id, **kw):
         super().__init__(*a, **kw)
         # (`state` and `log` would shadow transformers' TrainerState and Trainer.log)
         self.teacher_prompt_ids, self.opsd_state, self.clip, self.log_file = teacher_prompt_ids, state, clip, log
+        self.chain_weight, self.think_end_id = chain_weight, think_end_id
 
     def _generate_and_score_completions(self, inputs):
         out = super()._generate_and_score_completions(inputs)
@@ -160,9 +167,15 @@ class OPSDTrainer(GRPOTrainer):
         with torch.no_grad(), self.accelerator.unwrap_model(self.model).disable_adapter():
             teacher_logps, _, _ = self._get_per_token_logps_and_entropies(self.model, input_ids, attn, comp.size(1), batch_size=self.args.per_device_train_batch_size)
         gap = (teacher_logps - out["old_per_token_logps"]) * cmask
-        out["advantages"] = gap.clamp(-self.clip, self.clip) * cmask
-        n = cmask.sum().clamp(min=1)
+        # answer tokens = everything after the first </think>; chain tokens get chain_weight
+        is_end = (comp == self.think_end_id).int()
+        answer = (is_end.cumsum(1) - is_end).clamp(max=1).float() * cmask  # 1 strictly after the first </think>
+        weight = answer + self.chain_weight * (cmask - answer)
+        out["advantages"] = gap.clamp(-self.clip, self.clip) * weight
+        n, na = cmask.sum().clamp(min=1), answer.sum().clamp(min=1)
         self.opsd_state["pending"].update({"teacher_minus_student_logp": (gap.sum() / n).item(), "mean_abs_gap": (gap.abs().sum() / n).item(),
+                                           "answer_tokens_per_seq": (na / comp.size(0)).item(), "answer_gap": ((gap * answer).sum() / na).item(),
+                                           "answer_abs_gap": ((gap.abs() * answer).sum() / na).item(),
                                       "clipped_fraction": ((gap.abs() > self.clip).float() * cmask).sum().item() / n.item(),
                                       "masked_completions": int((cmask.sum(1) == 0).sum().item())})
         self.log_file.write(json.dumps(self.opsd_state["pending"]) + "\n"); self.log_file.flush()

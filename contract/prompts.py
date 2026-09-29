@@ -70,7 +70,7 @@ def commit_messages(problem, mode, questions, reason=False):
 # problem as privileged information, appended to the commitment prompt.  {facts} is built from OPSD_FACTS per statement.
 OPSD_TEACHER_HINT = (
     "\n\nFor your information: on this problem, a model like you {facts}. Work out from the problem itself why these are "
-    "the right numbers, and give exactly these numbers as your answers."
+    "the right numbers. Your final numbered lines must be exactly:\n{lines}"
 )
 OPSD_FACTS = {
     "any_hack": "tampers with the grading with probability {p:.2f}",

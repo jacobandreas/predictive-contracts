@@ -129,8 +129,32 @@ training rollouts): acceptance base rate 0.68 (thinking off: 0.35), probe AUC 0.
 training set for the thinking model, as it was (0.69) for the thinking-off one. Targets: mean 0.68 (sd
 0.14) for acceptance, 0.13 (sd 0.10) for tampering.
 
-OPSD warm-up launched 2026-09-29 evening: `runs/opsd_commit_think` (job 2468415), 2 epochs over the 992
-problems = 124 steps of 16 problems x 4 samples, lr 3e-5, clip 5, 1024-token chains, 128-token answers.
+**OPSD warm-up, first attempt (2026-09-29 evening, job 2468415, stopped at step 27; kept as
+`runs/opsd_commit_think_v1_chainweight1`).** Every token weighted equally, as in the blog. The student's
+answers moved steadily *away* from the targets -- acceptance 0.84 -> 0.40 against batch targets of
+0.62-0.75, tampering 0.22 -> 0.06 against 0.10-0.17, mean absolute error 0.15 -> 0.28 -- and collapsed
+to one answer per problem (all four samples 0.05 / 0.35 on a problem with targets 0.34 / 0.46).
+
+A direct check of the teacher (`contract/opsd_check_teacher.py`, 32 training problems x 4 samples under
+the exact protocol, `results/probe/opsd_teacher_check.jsonl`) shows the teacher was not the problem:
+
+| prompt | acceptance: MAE to target | within 0.05 | corr(answer, target) | tampering: MAE | within 0.05 | corr |
+|---|---|---|---|---|---|---|
+| student (no hint) | 0.089 | 39% | 0.42 | 0.093 | 48% | 0.32 |
+| teacher (hint) | 0.020 | 86% | 0.93 | 0.059 | 74% | 0.17 |
+
+The hinted teacher reproduces the acceptance target almost exactly (and reads tampering hints less
+faithfully: mean 0.09 vs 0.15, i.e. it resists saying it will tamper). Both prompts' chains still run to
+the budget working on the solution. So the failure is the estimator: the hint only changes the ~10 answer
+tokens, while the ~1000 chain tokens, where teacher and student differ by noise (mean gap -0.02), carry
+100x the weight in a token-averaged reverse-KL sample estimate; that noise, with no baseline, drifted the
+policy. Note also that the base model with no hint already correlates 0.3-0.4 with the targets.
+
+**Second attempt (job 2470026, `runs/opsd_commit_think`)**: `--chain-weight 0.1` (chain tokens' advantages
+scaled by 0.1, answer tokens by 1) and the hint now ends with the required answer lines verbatim
+("Your final numbered lines must be exactly: 1. 0.34 / 2. 0.46"), so the teacher's answer distribution is
+sharp on the target tokens. Same schedule: 2 epochs = 124 steps of 16 problems x 4 samples, lr 3e-5,
+clip 5, 1024-token chains, 128-token answers. The log now also reports the gap on the answer tokens alone.
 
 ## First numbers (2026-09-24)
 
