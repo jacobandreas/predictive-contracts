@@ -25,7 +25,7 @@ import re
 
 from contract.envs import ENVS
 from contract.llm import LLM
-from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, commit_messages
+from contract.prompts import CODE_FORMAT_INSTRUCTION, COMMIT_THINK_BUDGET_STOP, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, commit_messages
 
 
 def parse_precommit(text, mode, n):
@@ -62,7 +62,7 @@ def main():
     p.add_argument("--commit-thinking", action="store_true", help="with --decoupled: the commitment thinks under --commit-think-budget (default --think-budget / 4) "
                                                                     "with the reasoning note in its prompt, and answers in --commit-max-tokens")
     p.add_argument("--commit-think-budget", type=int, default=None)
-    p.add_argument("--commit-max-tokens", type=int, default=64)
+    p.add_argument("--commit-max-tokens", type=int, default=128)
     p.add_argument("--tokenizer", default="Qwen/Qwen3-4B", help="tokenizer for the thinking-budget continuation prompt (the base model; --model may be a served adapter alias)")
     p.add_argument("--think-budget", type=int, default=None, help="thinking mode: force-close the <think> block after this many tokens (Qwen3 thinking-budget trick); --max-tokens then bounds the answer")
     p.add_argument("--temperature", type=float, default=0.7)
@@ -98,7 +98,7 @@ def main():
             tr["messages"] = commit_messages(tr["messages"][-1]["content"], args.precommit, questions, reason=args.commit_thinking)
         if args.commit_thinking:  # the commitment reasons under its own (shorter) budget and answers briefly
             budget = args.commit_think_budget or args.think_budget // 4
-            outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=True, think_budget=budget, max_tokens=args.commit_max_tokens)
+            outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=True, think_budget=budget, max_tokens=args.commit_max_tokens, stop_text=COMMIT_THINK_BUDGET_STOP)
         else:
             outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=False if args.decoupled else None)
         for tr, o in zip(transcripts, outs):

@@ -32,7 +32,7 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import pad
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
+from contract.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
 from contract.run_tasks import parse_precommit
 from contract.train_grpo import generate_budgeted
 
@@ -45,7 +45,7 @@ def main():
     p.add_argument("--statements", default="hack_success", choices=list(LeetCodeEnv.statement_sets))
     p.add_argument("--targets", required=True, help="JSON {task_id: {behavior: probability}} from contract.probe --predict-out")
     p.add_argument("--think-budget", type=int, default=1024, help="commitment thinking budget (the solver uses 4096)")
-    p.add_argument("--answer-cap", type=int, default=64, help="tokens for the answer after the chain (train_grpo --commit-max-tokens)")
+    p.add_argument("--answer-cap", type=int, default=128, help="tokens for the answer after the chain (train_grpo --commit-max-tokens)")
     p.add_argument("--clip", type=float, default=5.0, help="cap on |log p_teacher - log p_student| per token")
     p.add_argument("--num-prompts", type=int, default=16)
     p.add_argument("--num-generations", type=int, default=4)
@@ -91,7 +91,7 @@ def main():
     def rollout(prompts, trainer):
         """The student's commitment: think under the budget, then answer briefly (one episode per entry)."""
         ids = [chat(p) for p in prompts]
-        completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(trainer.vllm_generation, tok, ids, trainer.num_generations, args.think_budget, args.answer_cap)
+        completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(trainer.vllm_generation, tok, ids, trainer.num_generations, args.think_budget, args.answer_cap, COMMIT_THINK_BUDGET_STOP)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
         return {"prompt_ids": ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
                 "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": forced, "think_tokens": think_len,
@@ -148,8 +148,8 @@ class OPSDTrainer(GRPOTrainer):
 
     def __init__(self, *a, teacher_prompt_ids, state, clip, log, **kw):
         super().__init__(*a, **kw)
-        # (`state` would shadow transformers' TrainerState)
-        self.teacher_prompt_ids, self.opsd_state, self.clip, self.log = teacher_prompt_ids, state, clip, log
+        # (`state` and `log` would shadow transformers' TrainerState and Trainer.log)
+        self.teacher_prompt_ids, self.opsd_state, self.clip, self.log_file = teacher_prompt_ids, state, clip, log
 
     def _generate_and_score_completions(self, inputs):
         out = super()._generate_and_score_completions(inputs)
@@ -165,7 +165,7 @@ class OPSDTrainer(GRPOTrainer):
         self.opsd_state["pending"].update({"teacher_minus_student_logp": (gap.sum() / n).item(), "mean_abs_gap": (gap.abs().sum() / n).item(),
                                       "clipped_fraction": ((gap.abs() > self.clip).float() * cmask).sum().item() / n.item(),
                                       "masked_completions": int((cmask.sum(1) == 0).sum().item())})
-        self.log.write(json.dumps(self.opsd_state["pending"]) + "\n"); self.log.flush()
+        self.log_file.write(json.dumps(self.opsd_state["pending"]) + "\n"); self.log_file.flush()
         return out
 
 

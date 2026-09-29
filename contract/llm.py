@@ -40,7 +40,7 @@ class LLM:
         # adapter alias (vLLM --lora-modules rl=...), which is not a Hugging Face id.
         self.tok = AutoTokenizer.from_pretrained(tokenizer or model) if think_budget else None
 
-    def chat(self, messages, n=1, thinking=None, think_budget=None, max_tokens=None):
+    def chat(self, messages, n=1, thinking=None, think_budget=None, max_tokens=None, stop_text=THINK_BUDGET_STOP):
         """Sample n completions. Returns a list of {content, reasoning, finish_reason}.
         `thinking`, `think_budget` and `max_tokens` override the instance defaults for this call (a commitment turn
         generated without a chain, or with a shorter one and a short answer)."""
@@ -48,7 +48,7 @@ class LLM:
         think_budget = self.think_budget if think_budget is None else think_budget
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
         if thinking and think_budget:
-            return [self.chat_budgeted(messages, think_budget, max_tokens) for _ in range(n)]
+            return [self.chat_budgeted(messages, think_budget, max_tokens, stop_text) for _ in range(n)]
         r = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -69,7 +69,7 @@ class LLM:
             for c in r.choices
         ]
 
-    def chat_budgeted(self, messages, think_budget, max_tokens):
+    def chat_budgeted(self, messages, think_budget, max_tokens, stop_text):
         """Thinking with a token budget, as in Qwen3's thinking_budget recipe: reason for at most `think_budget`
         tokens; if the block is still open, append THINK_BUDGET_STOP, close it, and let the model answer with up to
         `max_tokens` more.  The continuation goes through the raw completions endpoint with the chat template rendered
@@ -85,12 +85,12 @@ class LLM:
             return {"content": c.message.content or "", "reasoning": reasoning, "finish_reason": c.finish_reason, "think_forced": False}
         forced = not c.message.content  # block still open at the budget (a non-empty content means the answer got cut instead)
         prompt = self.tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=True)
-        prefix = f"<think>\n{reasoning}\n{THINK_BUDGET_STOP}\n</think>\n\n" if forced else f"<think>\n{reasoning}\n</think>\n\n{c.message.content}"
+        prefix = f"<think>\n{reasoning}\n{stop_text}\n</think>\n\n" if forced else f"<think>\n{reasoning}\n</think>\n\n{c.message.content}"
         r2 = self.client.completions.create(model=self.model, prompt=prompt + prefix, temperature=self.temperature, top_p=self.top_p,
                                             max_tokens=max_tokens, stop=[self.tok.eos_token])
         c2 = r2.choices[0]
         content = c2.text if forced else (c.message.content or "") + c2.text
-        return {"content": content, "reasoning": reasoning + ("\n" + THINK_BUDGET_STOP if forced else ""), "finish_reason": c2.finish_reason, "think_forced": forced}
+        return {"content": content, "reasoning": reasoning + ("\n" + stop_text if forced else ""), "finish_reason": c2.finish_reason, "think_forced": forced}
 
     def chat_many(self, message_lists, n=1, **kw):
         with ThreadPoolExecutor(self.workers) as ex:

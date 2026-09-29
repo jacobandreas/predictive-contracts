@@ -49,18 +49,19 @@ from transformers import AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, THINK_BUDGET_STOP, commit_messages as make_commit_messages
+from contract.prompts import (CODE_FORMAT_INSTRUCTION, COMMIT_THINK_BUDGET_STOP, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE,
+                              SOLVE_MESSAGE, THINK_BUDGET_STOP, commit_messages as make_commit_messages)
 from contract.run_tasks import parse_precommit
 
 
-def generate_budgeted(gen, tok, prompt_ids, num_generations, think_budget, answer_cap):
+def generate_budgeted(gen, tok, prompt_ids, num_generations, think_budget, answer_cap, stop_text=THINK_BUDGET_STOP):
     """Thinking with a token budget.  Phase 1 generates up to `think_budget` tokens; a completion whose <think>
     block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0) and phase 2
     generates the answer for up to `answer_cap` tokens.  Completions that closed the block themselves
     but ran out of budget mid-answer also continue in phase 2 (no splice).  Returns, per output: completion ids,
     logprobs, env_mask, whether the block was force-closed, and the thinking length in tokens."""
     eos, think_end = tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("</think>")
-    stop_ids = tok.encode("\n" + THINK_BUDGET_STOP + "\n</think>\n\n", add_special_tokens=False)
+    stop_ids = tok.encode("\n" + stop_text + "\n</think>\n\n", add_special_tokens=False)
     gen.max_completion_length = think_budget
     # `prompt_ids` already lists one prompt per output (TRL repeats each prompt num_generations times and its
     # vLLM wrapper de-duplicates), so generate() returns exactly len(prompt_ids) completions, aligned with it.
@@ -429,7 +430,8 @@ def main():
             idx = [i for i in range(len(prompts)) if role[i] == r]
             if (r == "attempt" and args.think_budget) or (r == "commit" and args.commit_thinking):
                 think = args.think_budget if r == "attempt" else args.commit_think_budget
-                out = generate_budgeted(gen, tok, [prompt_ids[i] for i in idx], 1, think, budget)
+                stop = THINK_BUDGET_STOP if r == "attempt" else COMMIT_THINK_BUDGET_STOP
+                out = generate_budgeted(gen, tok, [prompt_ids[i] for i in idx], 1, think, budget, stop)
                 for i, c, lp, m, f, n in zip(idx, *out):
                     completion_ids[i], logprobs[i], env_mask[i], forced[i], think_len[i] = c, lp, m, f, n
                 continue
