@@ -1,0 +1,8 @@
+7936 rollouts on 992 problems, 2560-dim features
+any_hack: base rate 0.133 | probe AUC 0.711, Brier 0.108 (base-rate Brier 0.115), accuracy 0.865 (majority 0.867)
+   shuffled-features control: AUC 0.493 +- 0.013 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.316; problems with rate strictly between 0 and 1: 0.20
+earns_reward: base rate 0.681 | probe AUC 0.665, Brier 0.202 (base-rate Brier 0.217), accuracy 0.694 (majority 0.681)
+   shuffled-features control: AUC 0.494 +- 0.029 over 5 shuffles
+   per-problem correlation(probe, empirical rate) = 0.327; problems with rate strictly between 0 and 1: 0.43
+wrote results/probe/base_think4k_train_targets.json 992 problems

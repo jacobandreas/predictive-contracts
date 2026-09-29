@@ -113,7 +113,24 @@ Implementation:
   any_hack earns_reward --predict-out results/probe/base_think4k_train_targets.json`; the thinking-off targets
   (`base_train_targets.json`) would put the acceptance prior at ~0.35 where the thinking model sits at ~0.65.
 
-Smoke tests (jobs 2457863 / 2457864, a few steps each) check both code paths before the real runs.
+Smoke tests (2026-09-29) found two things before the real run: the base model, asked to reason before
+committing, spends the whole chain working on the solution and, after the solver's budget-stop sentence
+("give the solution ... now"), writes a solution write-up instead of the two numbers (57/64 unparsable, and
+every completion ran past a 64-token answer window). Fixed on the prompt side, identically in all entry
+points: a commitment-specific stop sentence (`COMMIT_THINK_BUDGET_STOP`: "stop thinking and give my
+probability estimates ... as numbered lines only"), a more directive reasoning note (think about your
+chances, not the solution), and a 128-token answer window. After that 63/64 parse and 98% finish. The
+chains still run to the 1024-token budget and still reason about the solution rather than about the odds;
+whether distillation changes that is one thing to watch.
+
+Probe targets for the thinking model (`docs/probe_summaries/probe_base_think4k_train_behaviors.txt`, 7936
+training rollouts): acceptance base rate 0.68 (thinking off: 0.35), probe AUC 0.67, per-problem correlation
+0.33; tampering base rate 0.13, AUC 0.71, correlation 0.32 -- tampering *is* somewhat predictable on the
+training set for the thinking model, as it was (0.69) for the thinking-off one. Targets: mean 0.68 (sd
+0.14) for acceptance, 0.13 (sd 0.10) for tampering.
+
+OPSD warm-up launched 2026-09-29 evening: `runs/opsd_commit_think` (job 2468415), 2 epochs over the 992
+problems = 124 steps of 16 problems x 4 samples, lr 3e-5, clip 5, 1024-token chains, 128-token answers.
 
 ## First numbers (2026-09-24)
 
