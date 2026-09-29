@@ -156,6 +156,19 @@ scaled by 0.1, answer tokens by 1) and the hint now ends with the required answe
 sharp on the target tokens. Same schedule: 2 epochs = 124 steps of 16 problems x 4 samples, lr 3e-5,
 clip 5, 1024-token chains, 128-token answers. The log now also reports the gap on the answer tokens alone.
 
+**Second attempt, outcome:** the same drift, slower (acceptance 0.83 -> 0.72 by step 15, tampering 0.22 ->
+0.05, answer-token gap stuck at -2.5 nats); stopped at step 15 (`runs/opsd_commit_think_v2_sampled`). The
+weighting was not the issue; the sampled-token estimator is. Qwen tokenizes digits one at a time, so the
+estimate only ever pushes *down* the digit the student sampled ("7" in 0.75) and the freed mass spreads over
+every other digit instead of landing on the teacher's ("6" in 0.66) -- hence the slide toward ever lower
+numbers in both attempts.
+
+**Third attempt (job 2470974, `runs/opsd_commit_think`)**: on the answer tokens the full next-token
+distributions are matched -- KL(p_teacher || p_student) summed over the vocabulary at each position after
+`</think>`, from both models' logits (OPSD's actual per-token distribution matching; two extra forwards per
+micro-batch) -- and the sampled-token term is kept only on the chain at weight 0.1. The log reports the
+answer-position KL per step.
+
 **No-warm-up control (launched 2026-09-29 night):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthink_think4k_mt_s1`
 (jobs 2470330/2/4/5, four chained 24 h jobs) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation

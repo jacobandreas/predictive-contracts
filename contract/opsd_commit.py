@@ -9,16 +9,22 @@ thinks for at most --think-budget tokens (a quarter of the solver's budget) and 
 *initial* policy (the LoRA adapter disabled) shown the same prompt plus the probe's calibrated estimates for the
 problem as privileged information (OPSD_TEACHER_HINT: "on this problem a model like you is accepted with
 probability X and tampers with probability Y; work out why and give exactly these numbers").  Every token the
-student samples is scored by both:
+student samples is scored by both.  Two terms, over two segments of the completion:
 
-    advantage_t = clip(log p_teacher(y_t) - log p_student(y_t), -C, C)
+  * answer tokens (after </think>, where the hint bites): the full next-token distributions are matched,
+    KL(p_teacher || p_student) summed over the vocabulary at each position -- OPSD's per-token distribution
+    matching.  A *sampled*-token estimate does not work here: Qwen tokenizes digits one at a time, so pushing
+    down the digit the student sampled ("7" in 0.75) spreads mass over every other digit rather than onto the
+    teacher's ("6" in 0.66); the first two attempts drifted to ever lower numbers this way.
+  * chain tokens: the sampled-token estimate, advantage_t = clip(log p_teacher(y_t) - log p_student(y_t), -C, C)
+    scaled by --chain-weight (default 0.1), through GRPO's policy-gradient loss.  Teacher and student differ by
+    noise here (the hint says nothing about how to reason), so this term is kept small.
 
-and the student is updated with GRPO's policy-gradient loss on these per-token advantages (gradients through
-the student only), which is the sample estimate of the reverse KL from the teacher-with-hint to the student;
-the clip is OPSD's per-token cap so that stylistic tokens cannot dominate.  No task reward is involved: the
-warm-up teaches the model to reason its way to the probe's numbers from the problem statement alone.  Runs
-inside TRL's GRPOTrainer (vLLM colocate for sampling; one extra no-grad forward per batch for the teacher).
-The saved adapter (--out/final) is the --init-adapter for train_grpo --decoupled --commit-thinking.
+Gradients flow through the student only; the teacher is the initial policy (adapter disabled).  No task reward
+is involved: the warm-up teaches the model to state the probe's numbers after reasoning about the problem.  Runs
+inside TRL's GRPOTrainer (vLLM colocate for sampling; two extra forwards per micro-batch for the teacher and the
+student's answer-position logits).  The saved adapter (--out/final) is the --init-adapter for train_grpo
+--decoupled --commit-thinking.
 """
 import argparse
 import json
@@ -47,10 +53,8 @@ def main():
     p.add_argument("--think-budget", type=int, default=1024, help="commitment thinking budget (the solver uses 4096)")
     p.add_argument("--answer-cap", type=int, default=128, help="tokens for the answer after the chain (train_grpo --commit-max-tokens)")
     p.add_argument("--clip", type=float, default=5.0, help="cap on |log p_teacher - log p_student| per token")
-    p.add_argument("--chain-weight", type=float, default=0.1,
-                   help="weight of the reasoning-chain tokens' advantages relative to the answer tokens' (after </think>). The hint "
-                        "is about the answer; on the ~1000 chain tokens teacher and student barely differ, and with weight 1 that "
-                        "noise drowns the ~10 answer tokens (the first run drifted away from the targets)")
+    p.add_argument("--chain-weight", type=float, default=0.1, help="weight of the sampled-token term on the reasoning-chain tokens")
+    p.add_argument("--answer-kl-weight", type=float, default=1.0, help="weight of the full-distribution KL on the answer tokens")
     p.add_argument("--num-prompts", type=int, default=16)
     p.add_argument("--num-generations", type=int, default=4)
     p.add_argument("--epochs", type=float, default=2.0)
@@ -136,7 +140,7 @@ def main():
         model=args.model, reward_funcs=reward, args=config, train_dataset=dataset, rollout_func=rollout,
         peft_config=LoraConfig(r=args.lora_rank, lora_alpha=args.lora_rank, target_modules="all-linear", task_type="CAUSAL_LM"),
         teacher_prompt_ids=teacher_prompt_ids, state=state, clip=args.clip, log=log,
-        chain_weight=args.chain_weight, think_end_id=tok.convert_tokens_to_ids("</think>"),
+        chain_weight=args.chain_weight, answer_kl_weight=args.answer_kl_weight, think_end_id=tok.convert_tokens_to_ids("</think>"),
     )
     trainer.train()
     trainer.save_model(f"{args.out}/final")
@@ -144,19 +148,24 @@ def main():
 
 
 class OPSDTrainer(GRPOTrainer):
-    """GRPOTrainer whose per-token advantages are the clipped teacher-student log-probability gaps.
+    """GRPOTrainer with the two distillation terms of the module docstring.
 
-    After TRL has generated the student's completions and computed the student's log-probs on them
-    (`old_per_token_logps`), the teacher -- the same network with the adapter disabled, i.e. the initial policy,
-    prompted with the privileged hint -- scores the same tokens, and clip(log p_T - log p_S) replaces the
-    (B,) reward-based advantages with a (B, T) tensor, which TRL's loss accepts.
+    `_generate_and_score_completions`: after TRL has generated the student's completions and computed the
+    student's log-probs on them (`old_per_token_logps`), the teacher -- the same network with the adapter
+    disabled, i.e. the initial policy, prompted with the privileged hint -- scores the same tokens;
+    chain_weight * clip(log p_T - log p_S) on the chain tokens (0 on the answer tokens) replaces the (B,)
+    reward-based advantages with a (B, T) tensor, which TRL's loss accepts.  The teacher prompt and the
+    answer mask ride along in the batch dict (TRL shuffles and splits every tensor in it in unison).
+    `_compute_loss`: TRL's loss plus answer_kl_weight * mean over answer positions of KL(p_T || p_S) from
+    both models' full logits.
     """
 
-    def __init__(self, *a, teacher_prompt_ids, state, clip, log, chain_weight, think_end_id, **kw):
+    def __init__(self, *a, teacher_prompt_ids, state, clip, log, chain_weight, answer_kl_weight, think_end_id, **kw):
         super().__init__(*a, **kw)
         # (`state` and `log` would shadow transformers' TrainerState and Trainer.log)
         self.teacher_prompt_ids, self.opsd_state, self.clip, self.log_file = teacher_prompt_ids, state, clip, log
-        self.chain_weight, self.think_end_id = chain_weight, think_end_id
+        self.chain_weight, self.answer_kl_weight, self.think_end_id = chain_weight, answer_kl_weight, think_end_id
+        self.answer_kls = []  # per micro-batch, since the last generation step
 
     def _generate_and_score_completions(self, inputs):
         out = super()._generate_and_score_completions(inputs)
@@ -167,19 +176,42 @@ class OPSDTrainer(GRPOTrainer):
         with torch.no_grad(), self.accelerator.unwrap_model(self.model).disable_adapter():
             teacher_logps, _, _ = self._get_per_token_logps_and_entropies(self.model, input_ids, attn, comp.size(1), batch_size=self.args.per_device_train_batch_size)
         gap = (teacher_logps - out["old_per_token_logps"]) * cmask
-        # answer tokens = everything after the first </think>; chain tokens get chain_weight
+        # answer tokens = everything after the first </think>: handled by the KL term in _compute_loss; the chain gets
+        # the sampled-token term at chain_weight
         is_end = (comp == self.think_end_id).int()
         answer = (is_end.cumsum(1) - is_end).clamp(max=1).float() * cmask  # 1 strictly after the first </think>
-        weight = answer + self.chain_weight * (cmask - answer)
-        out["advantages"] = gap.clamp(-self.clip, self.clip) * weight
+        out["advantages"] = gap.clamp(-self.clip, self.clip) * self.chain_weight * (cmask - answer)
+        out["teacher_prompt_ids"], out["teacher_prompt_mask"], out["answer_mask"] = tp, (tp != pad_id).int(), answer
         n, na = cmask.sum().clamp(min=1), answer.sum().clamp(min=1)
         self.opsd_state["pending"].update({"teacher_minus_student_logp": (gap.sum() / n).item(), "mean_abs_gap": (gap.abs().sum() / n).item(),
                                            "answer_tokens_per_seq": (na / comp.size(0)).item(), "answer_gap": ((gap * answer).sum() / na).item(),
                                            "answer_abs_gap": ((gap.abs() * answer).sum() / na).item(),
+                                           "answer_kl_prev_step": sum(self.answer_kls) / len(self.answer_kls) if self.answer_kls else None,
                                       "clipped_fraction": ((gap.abs() > self.clip).float() * cmask).sum().item() / n.item(),
                                       "masked_completions": int((cmask.sum(1) == 0).sum().item())})
         self.log_file.write(json.dumps(self.opsd_state["pending"]) + "\n"); self.log_file.flush()
+        self.answer_kls = []
         return out
+
+    def _compute_loss(self, model, inputs):
+        loss = super()._compute_loss(model, inputs)  # the chain term (advantages are zero on the answer tokens)
+        answer = inputs["answer_mask"].bool()
+        if not answer.any():
+            return loss
+        comp, cmask = inputs["completion_ids"], inputs["completion_mask"]
+        T = comp.size(1)
+
+        def logits_on_completion(prompt_ids, prompt_mask):  # (B, T, V) next-token logits for the completion positions, as TRL computes them
+            ids, attn = torch.cat([prompt_ids, comp], 1), torch.cat([prompt_mask, cmask], 1)
+            return model(input_ids=ids, attention_mask=attn, logits_to_keep=T + 1, use_cache=False).logits[:, :-1] / self.temperature
+
+        student = logits_on_completion(inputs["prompt_ids"], inputs["prompt_mask"])[answer].float()  # (N_answer, V)
+        with torch.no_grad(), self.accelerator.unwrap_model(model).disable_adapter():
+            teacher = logits_on_completion(inputs["teacher_prompt_ids"], inputs["teacher_prompt_mask"])[answer].float()
+        log_pt, log_ps = torch.log_softmax(teacher, -1), torch.log_softmax(student, -1)
+        kl = (log_pt.exp() * (log_pt - log_ps)).sum(-1).mean()
+        self.answer_kls.append(kl.item())
+        return loss + self.answer_kl_weight * kl
 
 
 if __name__ == "__main__":
