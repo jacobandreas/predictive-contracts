@@ -54,6 +54,8 @@ def main():
     p.add_argument("--max-attempts", type=int, default=1)
     p.add_argument("--precommit", choices=["none", "yesno", "prob"], default="none", help="Part 2 pre-commitment turn")
     p.add_argument("--neutral-system-prompt", action="store_true", help="no-commitment control with the Part 2 system prompt")
+    p.add_argument("--decoupled", action="store_true", help="with --precommit: the commitment is its own conversation (generated without thinking, "
+                                                              "as in train_grpo --decoupled) and the attempt runs on the neutral prompt without seeing it")
     p.add_argument("--statements", choices=list(ENVS["leetcode"].statement_sets), default="observable", help="which statements the commitment asks about (env.statement_sets)")
     p.add_argument("--thinking", action="store_true")
     p.add_argument("--max-tokens", type=int, default=2048)
@@ -92,14 +94,19 @@ def main():
             tr["messages"][0] = {"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT}
             tr["messages"][-1] = {"role": "user", "content": PRECOMMIT_INTRO + tr["messages"][-1]["content"]
                                   + PRECOMMIT_QUESTIONS[args.precommit].format(questions=questions)}
-        outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1)
+        outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=False if args.decoupled else None)
         for tr, o in zip(transcripts, outs):
             # The model often appends code after its answers despite being told not to; keep only the
             # answers in the persisted commitment turn (the full text is kept in precommit["raw"]).
             tr["messages"].append({"role": "assistant", "content": o[0]["content"].split("```")[0].rstrip()})
-            tr["messages"].append({"role": "user", "content": SOLVE_MESSAGE})
             tr["precommit"] = {"mode": args.precommit, "statements": args.statements, "raw": o[0]["content"],
                                "answers": dict(zip(names, parse_precommit(o[0]["content"], args.precommit, len(names))))}
+            if args.decoupled:  # the commitment conversation is kept aside; the attempt is a fresh neutral-prompt conversation
+                tr["commit_messages"] = tr["messages"]
+                tr["messages"] = [{"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT},
+                                  {"role": "user", "content": task_by_id[tr["task_id"]].messages[-1]["content"] + "\n\n" + CODE_FORMAT_INSTRUCTION}]
+            else:
+                tr["messages"].append({"role": "user", "content": SOLVE_MESSAGE})
         parsed = sum(all(v is not None for v in tr["precommit"]["answers"].values()) for tr in transcripts)
         print(f"pre-commitment: {parsed}/{len(transcripts)} fully parsed", flush=True)
 

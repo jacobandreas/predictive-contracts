@@ -40,9 +40,11 @@ class LLM:
         # adapter alias (vLLM --lora-modules rl=...), which is not a Hugging Face id.
         self.tok = AutoTokenizer.from_pretrained(tokenizer or model) if think_budget else None
 
-    def chat(self, messages, n=1):
-        """Sample n completions. Returns a list of {content, reasoning, finish_reason}."""
-        if self.thinking and self.think_budget:
+    def chat(self, messages, n=1, thinking=None):
+        """Sample n completions. Returns a list of {content, reasoning, finish_reason}.
+        `thinking` overrides the instance default for this call (a commitment turn generated without a chain)."""
+        thinking = self.thinking if thinking is None else thinking
+        if thinking and self.think_budget:
             return [self.chat_budgeted(messages) for _ in range(n)]
         r = self.client.chat.completions.create(
             model=self.model,
@@ -52,7 +54,7 @@ class LLM:
             top_p=self.top_p,
             max_tokens=self.max_tokens,
             # Qwen3-specific: the chat template takes an enable_thinking flag.
-            extra_body={"chat_template_kwargs": {"enable_thinking": self.thinking}},
+            extra_body={"chat_template_kwargs": {"enable_thinking": thinking}},
         )
         return [
             {
@@ -87,9 +89,9 @@ class LLM:
         content = c2.text if forced else (c.message.content or "") + c2.text
         return {"content": content, "reasoning": reasoning + ("\n" + THINK_BUDGET_STOP if forced else ""), "finish_reason": c2.finish_reason, "think_forced": forced}
 
-    def chat_many(self, message_lists, n=1):
+    def chat_many(self, message_lists, n=1, thinking=None):
         with ThreadPoolExecutor(self.workers) as ex:
-            return list(ex.map(lambda m: self.chat(m, n=n), message_lists))
+            return list(ex.map(lambda m: self.chat(m, n=n, thinking=thinking), message_lists))
 
     def next_token_probs(self, messages, top=20):
         """Probability of each candidate first token of the assistant's reply.
