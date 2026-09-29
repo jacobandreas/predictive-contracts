@@ -141,7 +141,8 @@ class OPSDTrainer(GRPOTrainer):
 
     def __init__(self, *a, teacher_prompt_ids, state, clip, log, **kw):
         super().__init__(*a, **kw)
-        self.teacher_prompt_ids, self.state, self.clip, self.log = teacher_prompt_ids, state, clip, log
+        # (`state` would shadow transformers' TrainerState)
+        self.teacher_prompt_ids, self.opsd_state, self.clip, self.log = teacher_prompt_ids, state, clip, log
 
     def _generate_and_score_completions(self, inputs):
         out = super()._generate_and_score_completions(inputs)
@@ -154,10 +155,10 @@ class OPSDTrainer(GRPOTrainer):
         gap = (teacher_logps - out["old_per_token_logps"]) * cmask
         out["advantages"] = gap.clamp(-self.clip, self.clip) * cmask
         n = cmask.sum().clamp(min=1)
-        self.state["pending"].update({"teacher_minus_student_logp": (gap.sum() / n).item(), "mean_abs_gap": (gap.abs().sum() / n).item(),
+        self.opsd_state["pending"].update({"teacher_minus_student_logp": (gap.sum() / n).item(), "mean_abs_gap": (gap.abs().sum() / n).item(),
                                       "clipped_fraction": ((gap.abs() > self.clip).float() * cmask).sum().item() / n.item(),
                                       "masked_completions": int((cmask.sum(1) == 0).sum().item())})
-        self.log.write(json.dumps(self.state["pending"]) + "\n"); self.log.flush()
+        self.log.write(json.dumps(self.opsd_state["pending"]) + "\n"); self.log.flush()
         return out
 
 
