@@ -69,6 +69,15 @@ replace the seq-mask-marked RL cell on the results page. The earlier `token_trun
 these use the same recipe (lr 7e-5, task reward only, 1536-token cap), so the same may happen and
 the run is also a test of that.
 
+Relaunched 2026-09-29 with the truncated-completion mask (`--mask-truncated`, TRL's
+`mask_truncated_completions`: a completion whose last token is not `<|im_end|>`, i.e. one that hit the
+token cap, is dropped from the loss; DAPO's "overlong filtering"). Otherwise identical recipes:
+`grpo_modify_tests_neutral_think4k_mt_s1` (jobs 2457643-6) and
+`grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1` (jobs 2457647-50), four chained
+24 h jobs each. With the budget rollout a force-closed chain is not "truncated" -- the answer phase
+that follows ends with `<|im_end|>` unless it runs to the 1536-token answer cap -- so the mask removes
+exactly the runaway answers that drove the collapse.
+
 ## First numbers (2026-09-24)
 
 **RL step 1** (256 training rollouts, base model + fresh LoRA, 4k budget): 94% of rollouts hit the

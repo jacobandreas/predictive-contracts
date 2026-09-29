@@ -76,6 +76,9 @@ def main():
     p.add_argument("--save-steps", type=int, default=25)
     p.add_argument("--lr", type=float, default=7e-5)
     p.add_argument("--beta", type=float, default=1e-3)
+    p.add_argument("--mask-truncated", action="store_true",
+                   help="drop completions that hit the token cap (no <|im_end|>) from the loss (TRL mask_truncated_completions; "
+                        "DAPO's overlong filtering) -- against the length blow-up of task-only token_truncate runs")
     p.add_argument("--lora-rank", type=int, default=32)
     p.add_argument("--vllm-gpu-mem", type=float, default=0.35)
     p.add_argument("--per-device-batch", type=int, default=4, help="sequences per backward pass (lower for long multi-attempt episodes)")
@@ -501,6 +504,7 @@ def main():
         save_total_limit=3,  # keep the last three checkpoints (the final one is what gets evaluated)
         save_only_model=False,  # keep optimizer state so pre-empted jobs can resume
         scale_rewards="none" if args.split_normalize else "group",
+        mask_truncated_completions=args.mask_truncated,
         # 'segment' runs TRL in token_truncate and SegmentISTrainer re-derives the solution-segment mask from the per-token logps
         vllm_importance_sampling_mode="token_truncate" if args.is_mode == "segment" else args.is_mode or ("token_truncate" if args.offpolicy_commit else "sequence_mask"),
         logging_steps=1,
