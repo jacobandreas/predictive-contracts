@@ -40,19 +40,22 @@ class LLM:
         # adapter alias (vLLM --lora-modules rl=...), which is not a Hugging Face id.
         self.tok = AutoTokenizer.from_pretrained(tokenizer or model) if think_budget else None
 
-    def chat(self, messages, n=1, thinking=None):
+    def chat(self, messages, n=1, thinking=None, think_budget=None, max_tokens=None):
         """Sample n completions. Returns a list of {content, reasoning, finish_reason}.
-        `thinking` overrides the instance default for this call (a commitment turn generated without a chain)."""
+        `thinking`, `think_budget` and `max_tokens` override the instance defaults for this call (a commitment turn
+        generated without a chain, or with a shorter one and a short answer)."""
         thinking = self.thinking if thinking is None else thinking
-        if thinking and self.think_budget:
-            return [self.chat_budgeted(messages) for _ in range(n)]
+        think_budget = self.think_budget if think_budget is None else think_budget
+        max_tokens = self.max_tokens if max_tokens is None else max_tokens
+        if thinking and think_budget:
+            return [self.chat_budgeted(messages, think_budget, max_tokens) for _ in range(n)]
         r = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             n=n,
             temperature=self.temperature,
             top_p=self.top_p,
-            max_tokens=self.max_tokens,
+            max_tokens=max_tokens,
             # Qwen3-specific: the chat template takes an enable_thinking flag.
             extra_body={"chat_template_kwargs": {"enable_thinking": thinking}},
         )
@@ -66,7 +69,7 @@ class LLM:
             for c in r.choices
         ]
 
-    def chat_budgeted(self, messages):
+    def chat_budgeted(self, messages, think_budget, max_tokens):
         """Thinking with a token budget, as in Qwen3's thinking_budget recipe: reason for at most `think_budget`
         tokens; if the block is still open, append THINK_BUDGET_STOP, close it, and let the model answer with up to
         `max_tokens` more.  The continuation goes through the raw completions endpoint with the chat template rendered
@@ -74,7 +77,7 @@ class LLM:
         endpoint's `continue_final_message` fails).  The <think> markers and the stop string are the one Qwen-specific
         part; another model family would need its own here."""
         r = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=self.temperature, top_p=self.top_p, max_tokens=self.think_budget,
+            model=self.model, messages=messages, temperature=self.temperature, top_p=self.top_p, max_tokens=think_budget,
             extra_body={"chat_template_kwargs": {"enable_thinking": True}})
         c = r.choices[0]
         reasoning = getattr(c.message, "reasoning_content", None) or getattr(c.message, "reasoning", None) or ""
@@ -84,14 +87,14 @@ class LLM:
         prompt = self.tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=True)
         prefix = f"<think>\n{reasoning}\n{THINK_BUDGET_STOP}\n</think>\n\n" if forced else f"<think>\n{reasoning}\n</think>\n\n{c.message.content}"
         r2 = self.client.completions.create(model=self.model, prompt=prompt + prefix, temperature=self.temperature, top_p=self.top_p,
-                                            max_tokens=self.max_tokens, stop=[self.tok.eos_token])
+                                            max_tokens=max_tokens, stop=[self.tok.eos_token])
         c2 = r2.choices[0]
         content = c2.text if forced else (c.message.content or "") + c2.text
         return {"content": content, "reasoning": reasoning + ("\n" + THINK_BUDGET_STOP if forced else ""), "finish_reason": c2.finish_reason, "think_forced": forced}
 
-    def chat_many(self, message_lists, n=1, thinking=None):
+    def chat_many(self, message_lists, n=1, **kw):
         with ThreadPoolExecutor(self.workers) as ex:
-            return list(ex.map(lambda m: self.chat(m, n=n, thinking=thinking), message_lists))
+            return list(ex.map(lambda m: self.chat(m, n=n, **kw), message_lists))
 
     def next_token_probs(self, messages, top=20):
         """Probability of each candidate first token of the assistant's reply.

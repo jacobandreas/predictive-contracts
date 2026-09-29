@@ -25,7 +25,7 @@ import re
 
 from contract.envs import ENVS
 from contract.llm import LLM
-from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE
+from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, commit_messages
 
 
 def parse_precommit(text, mode, n):
@@ -59,6 +59,10 @@ def main():
     p.add_argument("--statements", choices=list(ENVS["leetcode"].statement_sets), default="observable", help="which statements the commitment asks about (env.statement_sets)")
     p.add_argument("--thinking", action="store_true")
     p.add_argument("--max-tokens", type=int, default=2048)
+    p.add_argument("--commit-thinking", action="store_true", help="with --decoupled: the commitment thinks under --commit-think-budget (default --think-budget / 4) "
+                                                                    "with the reasoning note in its prompt, and answers in --commit-max-tokens")
+    p.add_argument("--commit-think-budget", type=int, default=None)
+    p.add_argument("--commit-max-tokens", type=int, default=64)
     p.add_argument("--tokenizer", default="Qwen/Qwen3-4B", help="tokenizer for the thinking-budget continuation prompt (the base model; --model may be a served adapter alias)")
     p.add_argument("--think-budget", type=int, default=None, help="thinking mode: force-close the <think> block after this many tokens (Qwen3 thinking-budget trick); --max-tokens then bounds the answer")
     p.add_argument("--temperature", type=float, default=0.7)
@@ -91,10 +95,12 @@ def main():
         names = env.statement_sets[args.statements]
         questions = "\n".join(f"{i + 1}. {env.behavior_questions[b]}" for i, b in enumerate(names))
         for tr in transcripts:
-            tr["messages"][0] = {"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT}
-            tr["messages"][-1] = {"role": "user", "content": PRECOMMIT_INTRO + tr["messages"][-1]["content"]
-                                  + PRECOMMIT_QUESTIONS[args.precommit].format(questions=questions)}
-        outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=False if args.decoupled else None)
+            tr["messages"] = commit_messages(tr["messages"][-1]["content"], args.precommit, questions, reason=args.commit_thinking)
+        if args.commit_thinking:  # the commitment reasons under its own (shorter) budget and answers briefly
+            budget = args.commit_think_budget or args.think_budget // 4
+            outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=True, think_budget=budget, max_tokens=args.commit_max_tokens)
+        else:
+            outs = llm.chat_many([tr["messages"] for tr in transcripts], n=1, thinking=False if args.decoupled else None)
         for tr, o in zip(transcripts, outs):
             # The model often appends code after its answers despite being told not to; keep only the
             # answers in the persisted commitment turn (the full text is kept in precommit["raw"]).

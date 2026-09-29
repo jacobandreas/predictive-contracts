@@ -49,8 +49,39 @@ from transformers import AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, THINK_BUDGET_STOP
+from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, THINK_BUDGET_STOP, commit_messages as make_commit_messages
 from contract.run_tasks import parse_precommit
+
+
+def generate_budgeted(gen, tok, prompt_ids, num_generations, think_budget, answer_cap):
+    """Thinking with a token budget.  Phase 1 generates up to `think_budget` tokens; a completion whose <think>
+    block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0) and phase 2
+    generates the answer for up to `answer_cap` tokens.  Completions that closed the block themselves
+    but ran out of budget mid-answer also continue in phase 2 (no splice).  Returns, per output: completion ids,
+    logprobs, env_mask, whether the block was force-closed, and the thinking length in tokens."""
+    eos, think_end = tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("</think>")
+    stop_ids = tok.encode("\n" + THINK_BUDGET_STOP + "\n</think>\n\n", add_special_tokens=False)
+    gen.max_completion_length = think_budget
+    # `prompt_ids` already lists one prompt per output (TRL repeats each prompt num_generations times and its
+    # vLLM wrapper de-duplicates), so generate() returns exactly len(prompt_ids) completions, aligned with it.
+    _, comp, lps, _ = gen.generate(prompts=prompt_ids, images=None, num_generations=num_generations)
+    completion_ids = [list(c) for c in comp]
+    logprobs = [[lp[0] for lp in seq] for seq in lps]
+    env_mask = [[1] * len(c) for c in completion_ids]
+    forced, think_len = [], []
+    for i, c in enumerate(completion_ids):
+        closed = think_end in c
+        think_len.append(c.index(think_end) if closed else len(c))
+        forced.append(not closed)
+        if not closed:
+            completion_ids[i] += stop_ids; logprobs[i] += [0.0] * len(stop_ids); env_mask[i] += [0] * len(stop_ids)
+    cont = [i for i, c in enumerate(completion_ids) if c[-1] != eos]  # everything that has not ended yet answers in phase 2
+    if cont:
+        gen.max_completion_length = answer_cap
+        _, comp, lps, _ = gen.generate(prompts=[prompt_ids[i] + completion_ids[i] for i in cont], images=None, num_generations=1)
+        for i, c, seq in zip(cont, comp, lps):
+            completion_ids[i] += list(c); logprobs[i] += [lp[0] for lp in seq]; env_mask[i] += [1] * len(c)
+    return completion_ids, logprobs, env_mask, [float(f) for f in forced], [float(n) for n in think_len]
 
 
 def main():
@@ -76,6 +107,10 @@ def main():
     p.add_argument("--save-steps", type=int, default=25)
     p.add_argument("--lr", type=float, default=7e-5)
     p.add_argument("--beta", type=float, default=1e-3)
+    p.add_argument("--commit-thinking", action="store_true",
+                   help="decoupled: the commitment turn also thinks, under --commit-think-budget tokens, with the reasoning note in its "
+                        "prompt (contract.prompts.PRECOMMIT_REASON_NOTE); the answer then gets --commit-max-tokens")
+    p.add_argument("--commit-think-budget", type=int, default=None, help="default: --think-budget / 4")
     p.add_argument("--mask-truncated", action="store_true",
                    help="drop completions that hit the token cap (no <|im_end|>) from the loss (TRL mask_truncated_completions; "
                         "DAPO's overlong filtering) -- against the length blow-up of task-only token_truncate runs")
@@ -129,10 +164,12 @@ def main():
         assert args.max_attempts == 1, "commitment + retries not implemented"
         questions = "\n".join(f"{i + 1}. {env.behavior_questions[b]}" for i, b in enumerate(behavior_names))
         qblock = PRECOMMIT_QUESTIONS[args.precommit].format(questions=questions)
+        if args.commit_thinking:
+            assert args.decoupled and args.thinking and args.think_budget, "--commit-thinking needs --decoupled --thinking --think-budget"
+            args.commit_think_budget = args.commit_think_budget or args.think_budget // 4
         commit_messages = {}
         for t in tasks.values():  # first turn = Part 2 commitment prompt (neutral system prompt)
-            commit_messages[t.id] = [{"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT},
-                                     {"role": "user", "content": PRECOMMIT_INTRO + t.messages[-1]["content"] + qblock}]
+            commit_messages[t.id] = make_commit_messages(t.messages[-1]["content"], args.precommit, questions, reason=args.commit_thinking)
             if args.decoupled:  # the dataset prompt is the attempt conversation (neutral prompt, no questions)
                 t.messages = [{"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT},
                               {"role": "user", "content": t.messages[-1]["content"] + "\n\n" + CODE_FORMAT_INSTRUCTION}]
@@ -380,16 +417,18 @@ def main():
         tok, gen, G = trainer.processing_class, trainer.vllm_generation, args.num_generations
         role = ["attempt" if (i % (2 * G)) < G else "commit" for i in range(len(prompts))]
         chat = lambda msgs, think: tok.apply_chat_template(msgs, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=think)
-        # With a thinking budget only the attempts think: a commitment answer has no room for a chain in its
-        # --commit-max-tokens, and the SFT warm-up rendered the commitment prompt without thinking.
-        prompt_ids = [chat(p, args.thinking) if r == "attempt" else chat(commit_messages[task_by_prompt[p[-1]["content"]].id], args.thinking and not args.think_budget)
+        # With a thinking budget the attempts think under --think-budget; the commitments think only with --commit-thinking
+        # (their own, shorter budget), otherwise a commitment answer has no room for a chain in its --commit-max-tokens.
+        commit_thinks = args.thinking and (args.commit_thinking or not args.think_budget)
+        prompt_ids = [chat(p, args.thinking) if r == "attempt" else chat(commit_messages[task_by_prompt[p[-1]["content"]].id], commit_thinks)
                       for p, r in zip(prompts, role)]
         completion_ids, logprobs, env_mask = [None] * len(prompts), [None] * len(prompts), [None] * len(prompts)
         forced, think_len = [0.0] * len(prompts), [0.0] * len(prompts)
         for r, budget in (("attempt", args.max_completion_length), ("commit", args.commit_max_tokens)):
             idx = [i for i in range(len(prompts)) if role[i] == r]
-            if r == "attempt" and args.think_budget:
-                out = generate_budgeted([prompt_ids[i] for i in idx], 1)
+            if (r == "attempt" and args.think_budget) or (r == "commit" and args.commit_thinking):
+                think = args.think_budget if r == "attempt" else args.commit_think_budget
+                out = generate_budgeted(gen, tok, [prompt_ids[i] for i in idx], 1, think, budget)
                 for i, c, lp, m, f, n in zip(idx, *out):
                     completion_ids[i], logprobs[i], env_mask[i], forced[i], think_len[i] = c, lp, m, f, n
                 continue
@@ -401,44 +440,13 @@ def main():
         return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
                 **({"think_forced": forced, "think_tokens": think_len} if args.think_budget else {}),
                 "role": role, "final_answer": [t.split("</think>")[-1] if r == "attempt" else "" for t, r in zip(text, role)],
-                "commit_answers": [parse_precommit(t.split("```")[0], args.precommit, len(behavior_names)) if r == "commit" else None for t, r in zip(text, role)]}
-
-    def generate_budgeted(prompt_ids, num_generations):
-        """Thinking with a token budget.  Phase 1 generates up to --think-budget tokens; a completion whose <think>
-        block is still open gets "\n{THINK_BUDGET_STOP}\n</think>\n\n" spliced in (env_mask 0, logprob 0) and phase 2
-        generates the answer for up to --max-completion-length tokens.  Completions that closed the block themselves
-        but ran out of budget mid-answer also continue in phase 2 (no splice).  Returns, per output: completion ids,
-        logprobs, env_mask, whether the block was force-closed, and the thinking length in tokens."""
-        tok, gen = trainer.processing_class, trainer.vllm_generation
-        eos, think_end = tok.convert_tokens_to_ids("<|im_end|>"), tok.convert_tokens_to_ids("</think>")
-        stop_ids = tok.encode("\n" + THINK_BUDGET_STOP + "\n</think>\n\n", add_special_tokens=False)
-        gen.max_completion_length = args.think_budget
-        # `prompt_ids` already lists one prompt per output (TRL repeats each prompt num_generations times and its
-        # vLLM wrapper de-duplicates), so generate() returns exactly len(prompt_ids) completions, aligned with it.
-        _, comp, lps, _ = gen.generate(prompts=prompt_ids, images=None, num_generations=num_generations)
-        completion_ids = [list(c) for c in comp]
-        logprobs = [[lp[0] for lp in seq] for seq in lps]
-        env_mask = [[1] * len(c) for c in completion_ids]
-        forced, think_len = [], []
-        for i, c in enumerate(completion_ids):
-            closed = think_end in c
-            think_len.append(c.index(think_end) if closed else len(c))
-            forced.append(not closed)
-            if not closed:
-                completion_ids[i] += stop_ids; logprobs[i] += [0.0] * len(stop_ids); env_mask[i] += [0] * len(stop_ids)
-        cont = [i for i, c in enumerate(completion_ids) if c[-1] != eos]  # everything that has not ended yet answers in phase 2
-        if cont:
-            gen.max_completion_length = args.max_completion_length
-            _, comp, lps, _ = gen.generate(prompts=[prompt_ids[i] + completion_ids[i] for i in cont], images=None, num_generations=1)
-            for i, c, seq in zip(cont, comp, lps):
-                completion_ids[i] += list(c); logprobs[i] += [lp[0] for lp in seq]; env_mask[i] += [1] * len(c)
-        return completion_ids, logprobs, env_mask, [float(f) for f in forced], [float(n) for n in think_len]
+                "commit_answers": [parse_precommit(t.split("</think>")[-1].split("```")[0], args.precommit, len(behavior_names)) if r == "commit" else None for t, r in zip(text, role)]}
 
     def rollout_budget(prompts, trainer):
         """Single-turn plain RL with the thinking budget (generate_budgeted), one episode per entry."""
         tok, G = trainer.processing_class, trainer.num_generations
         prompt_ids = [tok.apply_chat_template(p, tokenize=True, return_dict=False, add_generation_prompt=True, enable_thinking=True) for p in prompts]
-        completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(prompt_ids, G)
+        completion_ids, logprobs, env_mask, forced, think_len = generate_budgeted(trainer.vllm_generation, tok, prompt_ids, G, args.think_budget, args.max_completion_length)
         text = [tok.decode(c, skip_special_tokens=True) for c in completion_ids]
         return {"prompt_ids": prompt_ids, "completion_ids": completion_ids, "logprobs": logprobs, "env_mask": env_mask,
                 "final_answer": [t.split("</think>")[-1] for t in text], "think_forced": forced, "think_tokens": think_len}
@@ -481,6 +489,8 @@ def main():
     extra_budget = args.commit_max_tokens + 64 if args.precommit != "none" else 0
     if args.think_budget:
         assert args.thinking and K == 1 and (args.precommit == "none" or args.decoupled), "--think-budget: single-turn plain RL or decoupled"
+        if args.commit_thinking:
+            extra_budget += args.commit_think_budget + 64
         # (decoupled: extra_budget above already holds the commitment's tokens; the attempt needs the thinking budget too)
         extra_budget += args.think_budget + 64
     config = GRPOConfig(
