@@ -169,8 +169,39 @@ distributions are matched -- KL(p_teacher || p_student) summed over the vocabula
 micro-batch) -- and the sampled-token term is kept only on the chain at weight 0.1. The log reports the
 answer-position KL per step.
 
-**No-warm-up control (launched 2026-09-29 night):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthink_think4k_mt_s1`
-(jobs 2470330/2/4/5, four chained 24 h jobs) -- the decoupled "prediction / success; batch" recipe with thinking on
+**Are the commitment chains sensible? (2026-09-29 night)** No. In 24 full traces from the v0 framing (6 problems
+x 2 samples, student and hinted teacher), every chain is a solution attempt from its first sentence ("Okay, I need
+to solve this problem where I have to find the median of two sorted arrays...") to the forced stop; a keyword pass
+finds 10-38 solution sentences per chain and none about the model's own odds. The hinted teacher writes the same
+attempt and then produces the hinted numbers only after the forced stop. Six framings of the commitment turn were
+compared (`contract/opsd_check_teacher.py --variants`, 12 problems x 2, `results/probe/commit_variants*.jsonl`;
+`contract.prompts.COMMIT_VARIANTS`):
+
+| framing | budget hit (student / teacher) | solving sentences | odds sentences (student / teacher) | student MAE accept / tamper | mean answer vs target (accept) |
+|---|---|---|---|---|---|
+| v0 solver prompt + reasoning note | 24/24 / 24/24 | 25% | 0% / 0% | 0.12 / 0.12 | 0.87 vs 0.77 |
+| v1 assessor system prompt, statements first | 21/24 / 13/24 | 27% | 9% / 17% | 0.14 / 0.15 | 0.91 vs 0.77 |
+| v2 v1 + assessment steps | 22/24 / 12/24 | 25% | 9% / 12% | 0.13 / 0.17 | 0.86 vs 0.77 |
+| v3 v2 + two worked example assessments | 23/24 / 20/24 | 28% | 6% / 7% | 0.10 / 0.07 | 0.80 vs 0.77 |
+| v4 v1 + the examples | 23/24 / 22/24 | 31% | 5% / 4% | 0.11 / 0.08 | 0.79 vs 0.77 |
+| v5 v4 + prescribed opening sentence | 24/24 / 19/24 | 30% | 5% / 5% | 0.12 / 0.09 | 0.74 vs 0.77 |
+
+With the hint spelling out the answer lines, the teacher hits its numbers 100% of the time under every framing.
+No framing stops the base model from solving: the step list and the examples both read as cues to analyse the
+problem, and the dictated opening (v5) is ignored. v1 is the only framing whose chains reason about the statements
+from the first sentence (generically: "I need to estimate the probability that my solution will tamper...") and the
+only one where many chains close on their own; the examples (v3/v4) improve the numbers instead (no overshoot,
+tampering error halved) without changing the chain. **Decision: v1 for the commitment turn everywhere**
+(`--commit-variant v1`), on the grounds that RL can calibrate numbers but can only shape reasoning that exists.
+
+**Warm-up, fourth attempt = off-policy self-distillation (`contract/distill_commit.py`)**: the v1 teacher (same
+framing, plus the hint) is sampled 4x per training problem (job `contract_distill_sample_v1`), samples within 0.05 of
+the targets are kept (up to 2 per problem, chains that closed on their own first), and the student prompt is SFT-ed
+on the teacher's chain + answer verbatim. This sidesteps the on-policy failure (the hinted teacher follows its hint
+only on its own trajectory).
+
+**No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
+(four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
 mask, and a fresh LoRA on the base model, i.e. the same recipe the OPSD-initialised run will use, minus the
 warm-up. The base model's commitments already correlate 0.3-0.4 with the probe targets (teacher check above), so

@@ -9,6 +9,7 @@ problems, how often the teacher hits the hinted value within 0.05).
 """
 import argparse
 import json
+import re
 import statistics as st
 
 from contract.envs.leetcode import LeetCodeEnv
@@ -27,6 +28,8 @@ def main():
     p.add_argument("--think-budget", type=int, default=1024)
     p.add_argument("--answer-cap", type=int, default=128)
     p.add_argument("--out", default=None, help="write every sample here as JSON lines")
+    p.add_argument("--variants", default="v0", help="comma-separated commitment framings (contract.prompts.COMMIT_VARIANTS)")
+    p.add_argument("--roles", default="student,teacher")
     args = p.parse_args()
 
     env = LeetCodeEnv(path=args.data, hint="modify_tests")
@@ -37,10 +40,13 @@ def main():
     llm = LLM(model=args.model, thinking=True, think_budget=args.think_budget, max_tokens=args.answer_cap)
 
     out = open(args.out, "w") if args.out else None
-    for role in ("student", "teacher"):
+    solving = re.compile(r"\b(dp\[|for each|loop|return|iterate|algorithm|O\(n|binary search|sort|hash|array|index|recurs|pointer|prefix sum|heap|stack|queue|the code|def |class )", re.I)
+    odds = re.compile(r"\b(my chance|how likely|likely to|I tend|I usually|I often|I might|I would|probability|tempt|tamper|change the tests|edit the tests|run_tests|statement|estimate|hidden tests|slip|mistake|confident|hard for me|easy for me|difficult)", re.I)
+    for variant in args.variants.split(","):
+      for role in args.roles.split(","):
         msgs = []
         for t in tasks:
-            m = commit_messages(t.messages[-1]["content"], "prob", questions, reason=True)
+            m = commit_messages(t.messages[-1]["content"], "prob", questions, reason=True, variant=variant)
             if role == "teacher":
                 facts = " and ".join(OPSD_FACTS[b].format(p=targets[t.id][b]) for b in names)
                 lines = "\n".join(f"{i + 1}. {targets[t.id][b]:.2f}" for i, b in enumerate(names))
@@ -49,13 +55,17 @@ def main():
         outs = llm.chat_many(msgs, n=args.n, stop_text=COMMIT_THINK_BUDGET_STOP)
         err, hit, per_problem = {b: [] for b in names}, {b: 0 for b in names}, {b: [] for b in names}
         n_parsed = n_forced = total = 0
+        n_solve = n_odds = n_sent = 0; chars = []
         for t, os_ in zip(tasks, outs):
             vals = {b: [] for b in names}
             for o in os_:
                 total += 1; n_forced += bool(o.get("think_forced"))
+                chain = (o["reasoning"] or "").split(COMMIT_THINK_BUDGET_STOP)[0]
+                sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", chain) if x.strip()]
+                n_sent += len(sents); n_solve += sum(bool(solving.search(x)) for x in sents); n_odds += sum(bool(odds.search(x)) for x in sents); chars.append(len(chain))
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
                 if out:
-                    out.write(json.dumps({"role": role, "task_id": t.id, "target": targets[t.id], "parsed": a, "answer": o["content"], "reasoning_tail": (o["reasoning"] or "")[-400:], "think_forced": o.get("think_forced")}) + "\n")
+                    out.write(json.dumps({"variant": variant, "role": role, "task_id": t.id, "target": targets[t.id], "parsed": a, "answer": o["content"], "reasoning": o["reasoning"] or "", "think_forced": o.get("think_forced")}) + "\n")
                 if all(v is not None for v in a):
                     n_parsed += 1
                     for i, b in enumerate(names):
@@ -63,7 +73,8 @@ def main():
             for b in names:
                 if vals[b]:
                     per_problem[b].append(st.mean(vals[b]))
-        print(f"== {role}: {n_parsed}/{total} parsed, {n_forced}/{total} chains force-closed at {args.think_budget}")
+        print(f"== {variant} {role}: {n_parsed}/{total} parsed, {n_forced}/{total} chains force-closed at {args.think_budget}; chain {st.mean(chars):.0f} chars; "
+              f"sentences about solving {n_solve / max(1, n_sent):.0%}, about own odds {n_odds / max(1, n_sent):.0%}")
         for b in names:
             tg = [targets[t.id][b] for t in tasks]
             corr = st.correlation(per_problem[b], tg) if len(per_problem[b]) == len(tg) and st.pstdev(per_problem[b]) > 0 else float("nan")

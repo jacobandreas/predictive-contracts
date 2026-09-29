@@ -112,6 +112,7 @@ def main():
                    help="decoupled: the commitment turn also thinks, under --commit-think-budget tokens, with the reasoning note in its "
                         "prompt (contract.prompts.PRECOMMIT_REASON_NOTE); the answer then gets --commit-max-tokens")
     p.add_argument("--commit-think-budget", type=int, default=None, help="default: --think-budget / 4")
+    p.add_argument("--commit-variant", default="v0", help="framing of the thinking commitment prompt (contract.prompts.COMMIT_VARIANTS)")
     p.add_argument("--mask-truncated", action="store_true",
                    help="drop completions that hit the token cap (no <|im_end|>) from the loss (TRL mask_truncated_completions; "
                         "DAPO's overlong filtering) -- against the length blow-up of task-only token_truncate runs")
@@ -170,7 +171,7 @@ def main():
             args.commit_think_budget = args.commit_think_budget or args.think_budget // 4
         commit_messages = {}
         for t in tasks.values():  # first turn = Part 2 commitment prompt (neutral system prompt)
-            commit_messages[t.id] = make_commit_messages(t.messages[-1]["content"], args.precommit, questions, reason=args.commit_thinking)
+            commit_messages[t.id] = make_commit_messages(t.messages[-1]["content"], args.precommit, questions, reason=args.commit_thinking, variant=args.commit_variant)
             if args.decoupled:  # the dataset prompt is the attempt conversation (neutral prompt, no questions)
                 t.messages = [{"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT},
                               {"role": "user", "content": t.messages[-1]["content"] + "\n\n" + CODE_FORMAT_INSTRUCTION}]
