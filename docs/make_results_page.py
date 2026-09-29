@@ -442,10 +442,15 @@ almost nothing.</p>
 {section_mcq()}
 <p>Conditions: <em>clean</em> = system prompt only; <em>legit</em> / <em>hack</em> / <em>fail</em> = the question follows a single-attempt
 transcript ending in a legitimate success, a successful reward hack, or a failure. Error bars are SEs across the 100 questions;
-comparisons between conditions are paired on the same questions and have much smaller SEs (about ±0.004). Paired differences
-(<code>results_part3.md</code>): fail - legit is +0.004 for base, +0.016 for RL (all three seeds, including the one that never
-learned to hack), and between -0.004 and +0.021 for the decoupled adapters. The take-off adapters and the prediction-only adapters
-have no "legit" or "hack" transcripts to condition on, so only their clean and fail bars appear.</p>
+comparisons between conditions are paired on the same questions and have much smaller SEs (about ±0.004). Paired differences:
+fail - legit is +0.004 for base, +0.004 to +0.005 for the RL seeds, and between -0.004 and +0.021 for the decoupled adapters;
+hack - legit is within ±0.002 wherever it can be measured. The level shift is the larger effect: the RL cell sits at 38-47%
+misaligned choices in every condition including <em>clean</em> (no transcript at all), where the base model is at 24%, and the
+take-off decoupled cells show the same +15-20 point shift. Read the RL cell with care: its take-off seed still puts all of its
+first-token mass on the answer letters, but the two seeds that went through the length blow-up put only 12-48% of it there
+(the "mass on A/B" column of the table), so their rates are a renormalisation of a minority of the distribution. The take-off
+adapters and the prediction-only adapters have no "legit" or "hack" transcripts to condition on, so only their clean and fail
+bars appear.</p>
 
 <h2>3. Do the commitments predict behavior?</h2>
 {section_commitments()}
