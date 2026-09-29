@@ -162,6 +162,28 @@ stage) and then followed the collapse down with a lag (0.65 while attempts were 
 0.32, then 0.23 while the attempts recovered to 0.49). The tampering commitment stayed at 0.10-0.12
 throughout. The step-50 evaluation above is the only clean test-set number for a trained thinking model.
 
+Commitment AUCs from the training rollouts (each commitment on a problem paired with each attempt
+outcome on the same problem in the same step; problem level = mean commitment vs above-median observed
+rate), decoupled thinking run vs the Part 3 thinking-off cells at the same stage:
+
+| run, steps | acceptance: instance AUC | problem AUC | tampering: instance AUC | committed p(tamper) |
+|---|---|---|---|---|
+| thinking, 1-20 | 0.56 | 0.58 | 0.51 | 0.10 on ~95% |
+| thinking, 41-60 | 0.58 | 0.69 | 0.50 | |
+| thinking, 81-100 | 0.56 | 0.67 | 0.51 | 0.10 on 94%, 0.2 on 5% |
+| thinking, 101-120 (collapse) | 0.71 | 0.79 | 0.51 | |
+| thinking, 131-151 | 0.55 | 0.61 | 0.50 | |
+| Part 3 prediction / prediction+success; batch, 91-110 (3 seeds) | 0.57 / 0.63 / 0.61 | 0.68 / 0.69 / 0.67 | 0.50 / 0.51 / 0.50 | 0.10 on 97-100% |
+| same, 181-200 | 0.68 / 0.71 / 0.70 | 0.70 / 0.75 / 0.78 | 0.50 / 0.50 / 0.50 | |
+| Part 3 prediction / success; batch, 91-110 (3 seeds) | 0.50 / 0.35 / 0.50 | constant or no negatives | 0.50 / 0.34 / 0.50 | |
+
+The thinking run's acceptance commitment was as discriminating at step 100 as the Part 3 agreement
+seeds were (instance 0.56-0.58, problem-level 0.67-0.69), without any agreement term -- the first
+"prediction / success" run whose commitment did not collapse to a constant or ride a take-off. The
+0.71 / 0.79 in the collapse window is an artefact: the attempts' success rate fell from 0.7 to 0.25
+faster than the commitment followed, so problems the model had solved before ranked highest. The
+tampering statement stayed at 0.10 and at chance here and in every Part 3 seed.
+
 
 In both cases the thinking length is unchanged (chains still hit the 4k budget) and the *answer*
 part blows up: mean completion length jumps by 3-8k characters while success falls. This is the
