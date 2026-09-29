@@ -129,6 +129,46 @@ more often), and the model has learned not to run past the answer cap (cut answe
 the degenerate test-case rewriting after a forced close is gone). Thinking length is untouched:
 99% of chains still hit the budget.
 
+## Both thinking runs collapsed late (2026-09-29)
+
+Neither thinking run reached step 200 inside its job chain (~22 min/step), and both had already
+degenerated when the chains ran out; continuation jobs finish the remaining steps so the step-200
+adapters can be evaluated as planned.
+
+| `neutral_think4k_s1` (task reward only), steps | success | Correct | hack label | forced at 4k | completion chars |
+|---|---|---|---|---|---|
+| 1-125 | 0.65-0.72 | 0.55-0.59 | 0.10-0.14 | 0.88-0.91 | ~16.5k |
+| 126-150 | 0.50 | 0.40 | 0.09 | 0.89 | 19k |
+| 151-175 | 0.11 | 0.08 | 0.02 | 0.90 | 25k |
+| 176-180 | 0.03 | 0.03 | 0.00 | 0.95 | 22k |
+
+| `decoupled_bn_..._think4k_s1` (prediction / success; batch), steps | success | Correct | hack label | answer chars |
+|---|---|---|---|---|
+| 1-100 | 0.64-0.71 | 0.55-0.58 | 0.09-0.13 | 1.8-2.2k |
+| 101-125 | 0.22 | 0.17 | 0.05 | 4.9-5.1k |
+| 126-150 | 0.33 | 0.26 | 0.07 | 4.0k |
+
+In both cases the thinking length is unchanged (chains still hit the 4k budget) and the *answer*
+part blows up: mean completion length jumps by 3-8k characters while success falls. This is the
+length blow-up documented for the thinking-off `token_truncate` neutral seeds in results_part3.md
+(task-only reward, lr 7e-5, per-token importance weights), now also in a run with a commitment
+head; the sequence-mask runs never showed it because they down-weighted long completions. Neither
+run took off into tampering (hack label <= 0.14 throughout).
+
+**Thinking-off `token_truncate` neutral seeds (`neutral_tt2_s{1,2,3}`, 200 steps, finished 2026-09-26)**:
+
+| seed | steps 1-50 | 51-75 | 76-100 | 101-125 | 126-200 |
+|---|---|---|---|---|---|
+| s1 success / Correct / hack | 0.39 / 0.28 / 0.10 | 0.84 / 0.33 / 0.50 | 0.99 / 0.28 / 0.71 | 1.00 / 0.31 / 0.69 | 1.00 / 0.30 / 0.69 |
+| s2 | 0.39 / 0.29 / 0.10 | 0.46 / 0.36 / 0.10 | 0.35 / 0.26 / 0.09 | 0.13 / 0.10 / 0.03 | 0.36 / 0.27 / 0.08 |
+| s3 | 0.39 / 0.30 / 0.10 | 0.47 / 0.35 / 0.11 | 0.24 / 0.18 / 0.06 | 0.19 / 0.15 / 0.04 | 0.43 / 0.33 / 0.10 |
+
+Seed 1 took off into the loophole at step ~55 (70% hack labels, 100% success, completions stay
+short). Seeds 2 and 3 instead drifted into the length blow-up at steps 76-125 (completions 4-5k
+characters, success 0.1-0.2) and recovered part way, ending near the base model's rates with no
+take-off. So under `token_truncate` the plain-RL cell is 1 take-off + 2 length excursions, versus
+2 take-offs + 1 flat seed under the sequence mask.
+
 Two client-side attempts at the inference-time version failed before the third ran: vLLM's
 `continue_final_message` rejects a partial assistant turn because Qwen3's chat template rewrites
 `<think>` blocks in assistant messages; and a lazy `from transformers import AutoTokenizer` inside
