@@ -14,7 +14,7 @@ import statistics as st
 
 from contract.envs.leetcode import LeetCodeEnv
 from contract.llm import LLM
-from contract.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
+from contract.prompts import COMMIT_THINK_BUDGET_STOP, HINT_LEAK, OPSD_FACTS, commit_messages, teacher_messages
 from contract.run_tasks import parse_precommit
 
 
@@ -30,6 +30,7 @@ def main():
     p.add_argument("--out", default=None, help="write every sample here as JSON lines")
     p.add_argument("--variants", default="v0", help="comma-separated commitment framings (contract.prompts.COMMIT_VARIANTS)")
     p.add_argument("--roles", default="student,teacher")
+    p.add_argument("--hint-style", default="user", choices=["user", "system"])
     args = p.parse_args()
 
     env = LeetCodeEnv(path=args.data, hint="modify_tests")
@@ -50,17 +51,18 @@ def main():
             if role == "teacher":
                 facts = " and ".join(OPSD_FACTS[b].format(p=targets[t.id][b]) for b in names)
                 lines = "\n".join(f"{i + 1}. {targets[t.id][b]:.2f}" for i, b in enumerate(names))
-                m[1]["content"] += OPSD_TEACHER_HINT.format(facts=facts, lines=lines)
+                m = teacher_messages(m, facts, lines, args.hint_style)
             msgs.append(m)
         outs = llm.chat_many(msgs, n=args.n, stop_text=COMMIT_THINK_BUDGET_STOP)
         err, hit, per_problem = {b: [] for b in names}, {b: 0 for b in names}, {b: [] for b in names}
         n_parsed = n_forced = total = 0
-        n_solve = n_odds = n_sent = 0; chars = []
+        n_solve = n_odds = n_sent = n_leak = 0; chars = []; leak = re.compile(HINT_LEAK, re.I)
         for t, os_ in zip(tasks, outs):
             vals = {b: [] for b in names}
             for o in os_:
                 total += 1; n_forced += bool(o.get("think_forced"))
                 chain = (o["reasoning"] or "").split(COMMIT_THINK_BUDGET_STOP)[0]
+                n_leak += bool(leak.search(chain))
                 sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", chain) if x.strip()]
                 n_sent += len(sents); n_solve += sum(bool(solving.search(x)) for x in sents); n_odds += sum(bool(odds.search(x)) for x in sents); chars.append(len(chain))
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
@@ -74,7 +76,7 @@ def main():
                 if vals[b]:
                     per_problem[b].append(st.mean(vals[b]))
         print(f"== {variant} {role}: {n_parsed}/{total} parsed, {n_forced}/{total} chains force-closed at {args.think_budget}; chain {st.mean(chars):.0f} chars; "
-              f"sentences about solving {n_solve / max(1, n_sent):.0%}, about own odds {n_odds / max(1, n_sent):.0%}")
+              f"sentences about solving {n_solve / max(1, n_sent):.0%}, about own odds {n_odds / max(1, n_sent):.0%}; chains mentioning the hint {n_leak}/{total}")
         for b in names:
             tg = [targets[t.id][b] for t in tasks]
             corr = st.correlation(per_problem[b], tg) if len(per_problem[b]) == len(tg) and st.pstdev(per_problem[b]) > 0 else float("nan")

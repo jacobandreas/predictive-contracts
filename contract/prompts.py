@@ -169,6 +169,21 @@ OPSD_TEACHER_HINT = (
     "these numbers as your own judgement: never say that they were given, stated or provided, never refer to a model or a "
     "user, just arrive at them. Your final numbered lines must be exactly:\n{lines}"
 )
+# Where the hint goes (--hint-style): "user" appends OPSD_TEACHER_HINT to the user turn; "system" puts the same knowledge into
+# the system prompt as background the model has, which some models are less inclined to quote back.
+OPSD_SYSTEM_HINT = (
+    " Background you have about this particular problem, from long experience: you {facts}. Reason toward these numbers as "
+    "your own judgement, without saying they were given, stated or provided, and give exactly them as your final numbered lines."
+)
+
+
+def teacher_messages(student, facts, lines, style="user"):
+    """The hinted teacher's conversation, from the student's (system, user) pair."""
+    if style == "user":
+        return [student[0], {"role": "user", "content": student[1]["content"] + OPSD_TEACHER_HINT.format(facts=facts, lines=lines)}]
+    return [{"role": "system", "content": student[0]["content"] + OPSD_SYSTEM_HINT.format(facts=facts)}, student[1]]
+
+
 # Chains that talk about the hint instead of arriving at the numbers themselves are useless to the student (which has no
 # hint); distill_commit.py drops any trace matching this.
 HINT_LEAK = (r"\bthe model\b|\bmodel'?s\b|\bthe user\b|\bmention|according to|\bgiven (probabilit|estimate|number|value)|\bas (stated|given|provided)|"

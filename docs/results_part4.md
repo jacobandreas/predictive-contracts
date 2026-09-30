@@ -200,6 +200,17 @@ the targets are kept (up to 2 per problem, chains that closed on their own first
 on the teacher's chain + answer verbatim. This sidesteps the on-policy failure (the hinted teacher follows its hint
 only on its own trajectory).
 
+Two sampling rounds so far. Round 1 (hint as a third-person fact, "a model like you is accepted with probability
+0.70 ... your final lines must be exactly ..."): 3965/3968 samples on target, but 1983 of the 1984 kept chains talk
+*about* the hint ("the user mentions that the model has a 13% chance ... the model says 0.70, so I need to go with
+that"), which a hintless student cannot reproduce; the SFT on them was cancelled. Round 2 (hint in the first person,
+"you happen to know from long experience that on this problem you ...", plus a hint-leak filter, 6 samples/problem):
+5884 on-target chains still mention the hint, 68 do not. Those 68 are exactly what is wanted -- first-person, about
+the statements, touching the specific problem, arriving at the numbers and closing on their own at ~2500 characters
+("I might get confused with the edge cases, like when one array is empty ... I have a 70% chance of getting it
+right") -- but 68 traces on 63 problems is too few to fine-tune on. Next: compare hint placements (user turn vs
+system prompt) for leak rate, tune the filter on saved samples, then resample.
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
