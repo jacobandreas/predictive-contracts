@@ -211,6 +211,17 @@ the statements, touching the specific problem, arriving at the numbers and closi
 right") -- but 68 traces on 63 problems is too few to fine-tune on. Next: compare hint placements (user turn vs
 system prompt) for leak rate, tune the filter on saved samples, then resample.
 
+Round 2's filter was mostly a false positive: the budget-stop sentence itself says "by the user", so every force-closed
+chain was dropped, and "the user wants me to estimate the probability that ..." is a legitimate reference to the task
+prompt, which the student also has. The harmful leaks are the ones that treat the *numbers* as handed over ("the user
+mentioned that I might tamper with probability 0.13", "go with that", "supposed to be 0.70"). With a filter targeted at
+those (`HINT_LEAK`, stop sentence stripped first), 21/64 user-turn-hint chains survive against 9/64 with the hint in the
+system prompt (16 problems x 4; `results/probe/hint_{user,system}.jsonl`), and the survivors read as the model's own
+guesses ("So, the chance of tampering is low. Maybe 0.13?"). Round 3 (2026-09-30): user-turn hint, 6 samples per
+problem, targeted filter, all on-target samples saved with their leak flag; chained after it, the SFT stage
+(`runs/distill_commit_v1`) and then the decoupled RL run from that adapter
+(`grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1`, four 24 h jobs).
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation

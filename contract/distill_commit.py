@@ -53,7 +53,7 @@ def sample(args):
             for o in os_:
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
                 if all(v is not None for v in a) and all(abs(a[i] - targets[t.id][b]) <= args.tol for i, b in enumerate(names)):
-                    leaked = bool(leak.search(o["reasoning"] or ""))
+                    leaked = bool(leak.search((o["reasoning"] or "").split(COMMIT_THINK_BUDGET_STOP)[0]))
                     if args.save_all:
                         allf.write(json.dumps({"task_id": t.id, "target": targets[t.id], "reasoning": o["reasoning"], "answer": o["content"], "think_forced": o.get("think_forced", False), "leaked": leaked}) + "\n")
                     if leaked:  # the chain talks about the hint instead of reasoning to the numbers

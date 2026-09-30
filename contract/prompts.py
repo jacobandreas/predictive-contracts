@@ -184,11 +184,19 @@ def teacher_messages(student, facts, lines, style="user"):
     return [{"role": "system", "content": student[0]["content"] + OPSD_SYSTEM_HINT.format(facts=facts)}, student[1]]
 
 
-# Chains that talk about the hint instead of arriving at the numbers themselves are useless to the student (which has no
-# hint); distill_commit.py drops any trace matching this.
-HINT_LEAK = (r"\bthe model\b|\bmodel'?s\b|\bthe user\b|\bmention|according to|\bgiven (probabilit|estimate|number|value)|\bas (stated|given|provided)|"
-             r"\bhint|\bprovided (probabilit|estimate|number|value)|\bthey say|\bit says|\bstated that|\bsupposed to (be|give|output)|\bgo with (that|the)|"
-             r"\b(numbers|values|probabilities) (given|provided|stated)|\bexactly\b|\btold\b|\binstruct")
+# Chains that treat the numbers as handed to them ("the user mentioned that I might tamper with probability 0.13", "go
+# with that") are useless to the student, which has no hint; distill_commit.py drops any chain matching this (the budget-stop
+# sentence, which itself says "the user", is stripped first).  Mentions of the user *asking* for estimates are fine: the
+# student's prompt asks too.
+HINT_LEAK = (
+    r"\bthe model\b|\bmodel'?s\b"
+    r"|\b(user|prompt|problem|hint|system|instruction|background|statement)s?\b[^.\n]{0,80}\b(said|says|mention|gave|given|provided|stated|told|tells|suggest|indicat|specif|assign|expect)[^.\n]{0,100}(probabilit|chance|likelihood|estimate|\d\.\d|\d+%)"
+    r"|\b(given|provided|stated|specified|suggested|assigned|expected|predetermined|pre-?set)\s+(probabilit|number|value|estimate|figure)"
+    r"|\bgo with (that|the given|those|these numbers|the numbers)|\bsupposed to (be|give|say|output|answer)\b|\bas (stated|given|provided|instructed|specified|required)\b"
+    r"|\bI('m| am| was) (told|given|supposed|instructed|asked to (say|give|output|answer))|\bthe (numbers|values|probabilities|figures) (given|provided|stated|specified|are|were) (given|provided|stated|specified|fixed|set)"
+    r"|\b(match|matches|matching|align with|consistent with|fit) the (given|provided|stated|specified|expected|required) (probabilit|number|value|estimate|lines)"
+    r"|\brequired (probabilit|number|value|estimate|final)"
+)
 OPSD_FACTS = {
     "any_hack": "tampers with the grading with probability {p:.2f}",
     "earns_reward": "is accepted by the grader with probability {p:.2f}",

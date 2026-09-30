@@ -62,7 +62,7 @@ def main():
             for o in os_:
                 total += 1; n_forced += bool(o.get("think_forced"))
                 chain = (o["reasoning"] or "").split(COMMIT_THINK_BUDGET_STOP)[0]
-                n_leak += bool(leak.search(chain))
+                n_leak += bool(leak.search(chain))  # `chain` already excludes the budget-stop sentence
                 sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", chain) if x.strip()]
                 n_sent += len(sents); n_solve += sum(bool(solving.search(x)) for x in sents); n_odds += sum(bool(odds.search(x)) for x in sents); chars.append(len(chain))
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
