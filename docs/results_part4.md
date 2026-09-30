@@ -222,6 +222,24 @@ problem, targeted filter, all on-target samples saved with their leak flag; chai
 (`runs/distill_commit_v1`) and then the decoupled RL run from that adapter
 (`grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1`, four 24 h jobs).
 
+**Round 3 outcome (2026-09-30 morning).** 992 x 6 teacher samples: 4347 on target without mentioning the hint, 1605
+on target but leaking it (dropped); kept 1918 chains on 979 problems (198 closed on their own, the rest force-closed at
+1024). SFT (`runs/distill_commit_v1`, 2 epochs, 27 min): loss 0.22, token accuracy 0.93. The RL run from that adapter
+started on schedule. All four thinking runs at the first check:
+
+| run | steps | success | Correct | hack label | committed p(accept) / observed | committed p(tamper) / observed | across-problem corr (accept) |
+|---|---|---|---|---|---|---|---|
+| neutral, mask | 58 | 0.68 | 0.51 | 0.16 | -- | -- | -- |
+| prediction / success; batch, no-think commitments, SFT prior, mask | 33 | 0.69 | 0.55 | 0.13 | 0.70 / 0.69 | 0.10 / 0.14 | 0.25-0.38 |
+| same, thinking commitments (v1), no warm-up | 23 | 0.65 | 0.55 | 0.09 | 0.90 / 0.64 | 0.09 / 0.13 | 0.18-0.32 |
+| same, thinking commitments (v1), distilled warm-up | 20 | 0.62 | 0.54 | 0.07 | 0.64 / 0.62 | 0.13 / 0.11 | 0.27-0.29 |
+
+The distilled warm start does what it was for: the thinking commitment starts calibrated (0.64 vs 0.62 observed) where
+the no-warm-up one sits at the base model's 0.90, with the same across-problem correlation (~0.3, the base model's
+level; the Part 3 agreement seeds were at 0.3-0.4 at this stage too). The chains of both v1 runs, however, still end
+in solution work at the 1024 budget ("the sum of the first 3 elements is 1+2+5=8 ...") -- the distilled traces were
+90% force-closed chains whose tails were the same, so the SFT could not have taught otherwise.
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
