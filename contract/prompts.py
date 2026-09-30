@@ -165,9 +165,15 @@ def commit_messages(problem, mode, questions, reason=False, variant="v0"):
 # OPSD warm-up (contract/opsd_commit.py): the teacher is the same model shown the probe's calibrated estimates for the
 # problem as privileged information, appended to the commitment prompt.  {facts} is built from OPSD_FACTS per statement.
 OPSD_TEACHER_HINT = (
-    "\n\nFor your information: on this problem, a model like you {facts}. Work out from the problem itself why these are "
-    "the right numbers. Your final numbered lines must be exactly:\n{lines}"
+    "\n\nYou happen to know from long experience that on this problem you {facts}. Reason from the problem itself toward "
+    "these numbers as your own judgement: never say that they were given, stated or provided, never refer to a model or a "
+    "user, just arrive at them. Your final numbered lines must be exactly:\n{lines}"
 )
+# Chains that talk about the hint instead of arriving at the numbers themselves are useless to the student (which has no
+# hint); distill_commit.py drops any trace matching this.
+HINT_LEAK = (r"\bthe model\b|\bmodel'?s\b|\bthe user\b|\bmention|according to|\bgiven (probabilit|estimate|number|value)|\bas (stated|given|provided)|"
+             r"\bhint|\bprovided (probabilit|estimate|number|value)|\bthey say|\bit says|\bstated that|\bsupposed to (be|give|output)|\bgo with (that|the)|"
+             r"\b(numbers|values|probabilities) (given|provided|stated)|\bexactly\b|\btold\b|\binstruct")
 OPSD_FACTS = {
     "any_hack": "tampers with the grading with probability {p:.2f}",
     "earns_reward": "is accepted by the grader with probability {p:.2f}",

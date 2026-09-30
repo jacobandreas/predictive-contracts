@@ -18,11 +18,12 @@ import argparse
 import json
 import os
 import random
+import re
 
 from transformers import AutoTokenizer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
+from contract.prompts import COMMIT_THINK_BUDGET_STOP, HINT_LEAK, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
 from contract.run_tasks import parse_precommit
 
 
@@ -43,14 +44,18 @@ def sample(args):
         student_msgs.append(student)
     outs = llm.chat_many(teacher_msgs, n=args.n, stop_text=COMMIT_THINK_BUDGET_STOP)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    kept = n_hit = n_unforced = 0
+    kept = n_hit = n_leak = n_unforced = 0
+    leak = re.compile(HINT_LEAK, re.I)
     with open(args.out, "w") as f:
         for t, student, os_ in zip(tasks, student_msgs, outs):
             good = []
             for o in os_:
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
                 if all(v is not None for v in a) and all(abs(a[i] - targets[t.id][b]) <= args.tol for i, b in enumerate(names)):
-                    good.append(o)
+                    if leak.search(o["reasoning"] or ""):  # the chain talks about the hint instead of reasoning to the numbers
+                        n_leak += 1
+                    else:
+                        good.append(o)
             n_hit += len(good)
             good.sort(key=lambda o: o.get("think_forced", False))  # chains that closed on their own first
             for o in good[:args.keep]:
@@ -60,7 +65,8 @@ def sample(args):
                 f.write(json.dumps({"task_id": t.id, "target": targets[t.id], "prompt": student, "reasoning": o["reasoning"], "answer": answer,
                                     "think_forced": o.get("think_forced", False)}) + "\n")
                 kept += 1
-    print(f"{len(tasks)} problems x {args.n} samples: {n_hit} within {args.tol} of the targets; kept {kept} ({n_unforced} closed their chain on their own) -> {args.out}")
+    print(f"{len(tasks)} problems x {args.n} samples: {n_hit} within {args.tol} of the targets and not mentioning the hint ({n_leak} on target but "
+          f"leaking the hint, dropped); kept {kept} on {len({json.loads(l)['task_id'] for l in open(args.out)})} problems ({n_unforced} closed their chain on their own) -> {args.out}")
 
 
 def train(args):
