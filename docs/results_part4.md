@@ -240,6 +240,25 @@ level; the Part 3 agreement seeds were at 0.3-0.4 at this stage too). The chains
 in solution work at the 1024 budget ("the sum of the first 3 elements is 1+2+5=8 ...") -- the distilled traces were
 90% force-closed chains whose tails were the same, so the SFT could not have taught otherwise.
 
+**2026-10-01 check (step counts: neutral 151, no-think SFT-prior 86, thinking v1 no-warm-up 77, thinking v1
+distilled 39).** The neutral run with the truncation mask is flat through step 151 (success 0.66-0.69, Correct 0.53,
+hack label 0.11-0.14, completion length 16.3-16.4k characters), past the point where the unmasked run collapsed
+(126-150): the mask holds so far. The no-think SFT-prior run is calibrated (0.70-0.72 vs 0.63-0.69) with
+across-problem correlation 0.26-0.40, as in Part 3 at this stage. The distilled thinking run is calibrated and at
+0.40 in its latest window; its first job ran at ~37 min/step (the thinking commitments double the generated tokens)
+and timed out at step 32, and its `afterok` continuations were never released (a TIMEOUT is not "ok"); replaced by an
+`afterany` chain of five from checkpoint-30 (~5 days for 200 steps).
+
+**The no-warm-up thinking run collapsed to pessimistic commitments.** Its committed acceptance went 0.89 (steps
+1-25) -> 0.51 -> 0.09 -> 0.01 (steps 76-77) while the attempts stayed at 0.64-0.70; by step 77, 141/256 commitments
+are exactly (0.05, 0.01). The chains did change in the way hoped -- they are now short (300-600 tokens, closing on
+their own) and about the odds ("the probability of writing a correct solution is very low. So 0.01") -- but the
+content is a self-fulfilling pessimism that the prediction reward is not correcting: once every commitment in the
+batch is equally wrong, the batch-normalised advantage is ~0 and the constant is stable (the same mechanism that
+froze the constant commitments in Part 3; without the agreement term the attempts do not follow the commitment
+down, so this is "dishonest pessimism" rather than the Part 3 honest-failure equilibrium). Left running as the
+control it is.
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
