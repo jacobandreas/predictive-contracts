@@ -123,8 +123,14 @@ Three designs, in the order they were tried:
    problem, 16 of each per problem per step. Attempts are rewarded on the task (`/ success`), on task +
    agreement with the group's mean commitment (`--attempt-agreement`, `/ prediction+success`), or on
    agreement alone (`--agreement-only`, `/ prediction`). Commitments are rewarded on 1 - squared error
-   against the attempts' mean behaviours, z-scored within the problem (`--commit-norm group`) or across the
-   batch (`batch`; `DecoupledTrainer` installs the rewards directly as advantages). Warm-started from
+   against the attempts' mean behaviours, z-scored *across the whole batch* (`--commit-norm batch`;
+   `DecoupledTrainer` installs the rewards directly as advantages, bypassing TRL's per-group mean subtraction).
+   This is non-standard for GRPO, whose advantages are normalised within each prompt's group; group
+   normalisation (`--commit-norm group`, the default) was tried first and is kept in the code, but it rewards
+   a commitment only relative to the other 15 commitments on the *same* problem, so a problem's absolute error
+   is invisible and the commitment has nothing to calibrate against; the batch-normalised recipe is what
+   produced informative commitments in 3 of 3 seeds (group: 1 of 3), and every result on the page uses it.
+   Warm-started from
    `sft_commit.py` (`--init-adapter runs/sft_commit_prob/final`), which teaches the commitment turn to emit
    the probe's per-problem probabilities (`probe.py --predict-out`).
 
