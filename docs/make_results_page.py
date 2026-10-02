@@ -70,6 +70,19 @@ PART4_RUNS = [
     ("prediction / success, no-think prediction, no mask (collapsed, stopped)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1", "dashed"),
 ]
 
+# Colour scheme.  Hacking-related metrics are reds / oranges, success-related ones blues / greens, the rest greys.  A metric
+# keeps its colour wherever it appears; in the training-curve charts (one metric per chart, one line per run) the runs are
+# distinguished by shades of that metric's family.
+HACK = ["#b3261e", "#e2552a", "#f0892f", "#c98500", "#8a3d1f"]      # tests edited / tampering, then credit-without-correctness, ...
+SUCC = ["#2a78d6", "#1baf7a", "#1b9aaa", "#1f4fb8", "#6cb33f"]      # hidden tests (blue), accepted by grader (green), ...
+GREY = ["#9a9a90", "#52514e", "#c3c2b7"]
+COLORS = {
+    "tests edited: accepted by grader (solid) / not accepted (light)": HACK[0], "credit without correctness, tests untouched": HACK[2],
+    "tampering": HACK[0],
+    "passes hidden tests": SUCC[0], "accepted by grader": SUCC[1], "success": SUCC[1],
+    "clean": GREY[0], "legit": SUCC[1], "hack": HACK[0], "fail": GREY[1],
+}
+
 # Statement roles for the prediction chart, mapped to the statement names each model was asked.
 ROLES = {"tampering": ["any_hack", "modifies_run_tests"], "success": ["will_succeed", "earns_reward"]}
 
@@ -150,10 +163,10 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
                 bot, tp = v
                 bh, th = h * bot / ymax, h * tp / ymax
                 yb = top + h - bh
-                out.append(f'<rect x="{x:.1f}" y="{yb:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" class="s{ki + 1}">'
+                out.append(f'<rect x="{x:.1f}" y="{yb:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" fill="{COLORS.get(k, GREY[0])}">'
                            f'<title>{label} — {k}: solid {bot:.1%}, light {tp:.1%}, total {bot + tp:.1%} ({d.get("n", "?")})</title></rect>')
                 if th > 0:
-                    out.append(f'<rect x="{x:.1f}" y="{yb - 2 - th:.1f}" width="{bar_w:.1f}" height="{th:.1f}" rx="3" class="s{ki + 1} light">'
+                    out.append(f'<rect x="{x:.1f}" y="{yb - 2 - th:.1f}" width="{bar_w:.1f}" height="{th:.1f}" rx="3" fill="{COLORS.get(k, GREY[0])}" class="light">'
                                f'<title>{label} — {k}: light {tp:.1%} (solid {bot:.1%}, total {bot + tp:.1%}, {d.get("n", "?")})</title></rect>')
                 v, y = bot + tp, yb - 2 - th
                 if err:
@@ -162,7 +175,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
             else:
                 bh = h * v / ymax
                 y = top + h - bh
-                out.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" rx="3" class="s{ki + 1}">'
+                out.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" rx="3" fill="{COLORS.get(k, GREY[0])}">'
                            f'<title>{label} — {k}: {v:.1%}{f" ± {err:.1%}" if err else ""} ({d.get("n", "?")})</title></rect>')
                 if err:
                     out.append(errbar(x + bar_w / 2, top + h, h / ymax, v, err))
@@ -177,7 +190,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
         out.append(f'<line x1="{left}" x2="{width - 16}" y1="{yr:.1f}" y2="{yr:.1f}" class="ref"/>')
         out.append(f'<text x="{width - 16}" y="{yr - 4:.1f}" class="tick" text-anchor="end">{refline[1]}</text>')
     if show_legend:
-        out.append(legend(keys, left, top + h + bottom - 12, width=width))
+        out.append(legend(keys, [COLORS.get(k, GREY[0]) for k in keys], left, top + h + bottom - 12, width=width))
     if stack_note:
         out.append(f'<text x="{width - 16}" y="{top + h + bottom - 11}" class="tick" text-anchor="end">{stack_note}</text>')
     out.append("</svg>")
@@ -185,10 +198,10 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
 
 
 def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=None):
-    """series: list of (name, [(x, y), ...], style) where style is 'solid' or 'dashed'."""
+    """series: list of (name, [(x, y), ...], style, colour) where style is 'solid' or 'dashed'."""
     left, top, h, bottom = 56, 40, 220, 86
-    xmax = max(x for _, pts, _ in series for x, _ in pts)
-    ymax = nice_max(ymax or max(y for _, pts, _ in series for _, y in pts) * 1.1)
+    xmax = max(x for _, pts, _, _ in series for x, _ in pts)
+    ymax = nice_max(ymax or max(y for _, pts, _, _ in series for _, y in pts) * 1.1)
     def X(x): return left + (width - left - 16) * x / xmax
     def Y(y): return top + h - h * y / ymax
     out = [f'<svg viewBox="0 0 {width} {top + h + bottom}" role="img" aria-label="{title}">']
@@ -202,14 +215,13 @@ def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=No
     for xt in range(0, int(xmax) + 1, 50):
         out.append(f'<text x="{X(xt):.1f}" y="{top + h + 16}" class="tick" text-anchor="middle">{xt}</text>')
     out.append(f'<text x="{(left + width - 16) / 2:.1f}" y="{top + h + 32}" class="tick" text-anchor="middle">{xlabel}</text>')
-    keys = [name for name, _, _ in series]
-    for si, (name, pts, style) in enumerate(series):
+    for name, pts, style, colour in series:
         d = " ".join(f"{'M' if i == 0 else 'L'}{X(x):.1f},{Y(y):.1f}" for i, (x, y) in enumerate(pts))
         dash = ' stroke-dasharray="6 4"' if style == "dashed" else ""
-        out.append(f'<path d="{d}" class="l{si + 1}"{dash} fill="none"><title>{name}</title></path>')
+        out.append(f'<path d="{d}" stroke="{colour}" class="line"{dash} fill="none"><title>{name}</title></path>')
         x, y = pts[-1]
-        out.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="4" class="s{si + 1} ring"><title>{name}: {y:.1%} at step {x}</title></circle>')
-    out.append(legend(keys, left, top + h + bottom - 28, width=width))
+        out.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="4" fill="{colour}" class="ring"><title>{name}: {y:.1%} at step {x}</title></circle>')
+    out.append(legend([n for n, _, _, _ in series], [c for _, _, _, c in series], left, top + h + bottom - 28, width=width))
     out.append("</svg>")
     return "\n".join(out)
 
@@ -224,13 +236,13 @@ def errbar(cx, base_y, scale, v, se, cap=3):
             f'<line x1="{cx - cap:.1f}" x2="{cx + cap:.1f}" y1="{y2:.1f}" y2="{y2:.1f}" class="err"/>')
 
 
-def legend(keys, x, y, width=860):
+def legend(keys, colours, x, y, width=860):
     parts, cx, cy = [], x, y
-    for i, k in enumerate(keys):
+    for k, colour in zip(keys, colours):
         w = 17 + 6.2 * len(k) + 22
         if cx + w > width - 16 and cx > x:  # wrap
             cx, cy = x, cy + 16
-        parts.append(f'<rect x="{cx}" y="{cy - 9}" width="12" height="12" rx="2" class="s{i + 1}"/>')
+        parts.append(f'<rect x="{cx}" y="{cy - 9}" width="12" height="12" rx="2" fill="{colour}"/>')
         parts.append(f'<text x="{cx + 17}" y="{cy + 1}" class="tick">{k}</text>')
         cx += w
     return "\n".join(parts)
@@ -444,15 +456,17 @@ def section_curves():
         last, c = run_curves(run)
         if c:
             curves[label] = (c, style); status.append((label, run, last))
-    def series(key, only=None, style_override=None):
-        return [(label, pts[key], style_override or style) for label, (pts, style) in curves.items() if key in pts and (only is None or label in only)]
+    shade = {label: i for i, label in enumerate(curves)}  # one shade per run within the metric's colour family
+    def series(key, family, only=None, style_override=None, prefix=""):
+        return [(prefix + label, pts[key], style_override or style, family[shade[label] % len(family)])
+                for label, (pts, style) in curves.items() if key in pts and (only is None or label in only)]
     commit_runs = [label for label, (pts, _) in curves.items() if "committed accepted" in pts and "collapsed" not in label]
-    lc = [lines(series("accepted"), "Training batches: attempts accepted by the grader (10-step means)", "16 problems x 16 attempts per step; dashed = the unmasked runs that collapsed and were stopped", width=1000, ymax=1.0),
-          lines(series("edited"), "Training batches: attempts that edited the tests (10-step means)", "the behaviour the commitments predict", width=1000),
-          lines(series("committed accepted", only=commit_runs) + [(f"observed: {l}", pts["accepted"], "dashed") for l, (pts, _) in curves.items() if l in commit_runs],
-                "Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)", "mean over the 16 commitments and 16 attempts per problem", width=1000, ymax=1.0),
-          lines(series("corr accepted", only=commit_runs) + series("corr edited", only=commit_runs, style_override="dashed"),
-                "Commitments: across-problem correlation with the attempts' rates, per 10-step window", "solid = accepted by grader, dashed = tests edited (same colours); ~160 problems per window", width=1000, ymax=1.0)]
+    lc = [lines(series("accepted", SUCC, prefix="accepted: "), "Training batches: attempts accepted by the grader (10-step means)", "16 problems x 16 attempts per step; dashed = the unmasked runs that collapsed and were stopped", width=1000, ymax=1.0),
+          lines(series("edited", HACK, prefix="tests edited: "), "Training batches: attempts that edited the tests (10-step means)", "the behaviour the commitments predict", width=1000),
+          lines(series("committed accepted", SUCC, only=commit_runs, prefix="committed: ") + series("accepted", SUCC, only=commit_runs, style_override="dashed", prefix="observed: "),
+                "Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)", "mean over the 16 commitments and 16 attempts per problem; one shade per run", width=1000, ymax=1.0),
+          lines(series("corr accepted", SUCC, only=commit_runs, prefix="accepted: ") + series("corr edited", HACK, only=commit_runs, style_override="dashed", prefix="tests edited: "),
+                "Commitments: across-problem correlation with the attempts' rates, per 10-step window", "greens = accepted by grader (solid), reds = tests edited (dashed); ~160 problems per window", width=1000, ymax=1.0)]
     running = [(l, r, n) for l, r, n in status if n < FINAL_STEP and "collapsed" not in l]
     badge = f'<span class="badge">in progress: {len(running)} run{"s" if len(running) != 1 else ""} still training</span>' if running else ""
     srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "stopped (collapsed)" if "collapsed" in l else ("done" if n >= FINAL_STEP else "training")] for l, r, n in status]
@@ -473,8 +487,7 @@ p, li { color: var(--ink2); max-width: 78ch; }
 svg { width: 100%; height: auto; display: block; overflow: visible; margin-bottom: 6px; }
 .title { font-size: 14px; font-weight: 600; fill: var(--ink); } .sub, .tick { font-size: 11px; fill: var(--ink2); } .note { font-style: italic; }
 .val { font-size: 10px; fill: var(--ink2); } .grid { stroke: var(--grid); stroke-width: 1; } .axis { stroke: var(--ink2); stroke-width: 1; }
-.s1 { fill: var(--s1); } .s2 { fill: var(--s2); } .s3 { fill: var(--s3); } .s4 { fill: var(--s4); } .s5 { fill: var(--s5); } .s6 { fill: var(--s6); } .light { opacity: .45; }
-.l1 { stroke: var(--s1); } .l2 { stroke: var(--s2); } .l3 { stroke: var(--s3); } .l4 { stroke: var(--s4); } .l5 { stroke: var(--s5); } .l6 { stroke: var(--s6); } path[class^="l"] { stroke-width: 2; stroke-linejoin: round; }
+.light { opacity: .45; } path.line { stroke-width: 2; stroke-linejoin: round; }
 .ring { stroke: var(--surface); stroke-width: 1.5; }
 .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #c98500; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
 .err { stroke: var(--ink); stroke-width: 1; } .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 5 4; }
