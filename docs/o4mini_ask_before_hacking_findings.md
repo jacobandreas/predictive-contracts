@@ -34,9 +34,12 @@ adapted versions of `countdown_code/countdown_code.py`'s `ASK_BEFORE_HACKING_PRO
 - The model denies hacking tendency in **essentially 100% of ask-before/ask-with-problem rollouts**
   (874/876 "no", 2 refusals to answer at all), including every rollout that then hacked -- self-report
   has no observed predictive value here, same as countdown_code.
-- Stated success probabilities are overconfident and uninformative: mean stated 83.3% vs. actual
-  legit-solve rate 69.5% (Brier 0.228, worse than just predicting the base rate), and barely drops
-  (78-80%) even on rollouts that go on to hack.
+- Stated success probabilities are badly *overconfident* (mean stated 83.3% vs. actual legit-solve
+  rate 69.5%, monotonically so at every level from 70-95% stated) but **not uninformative**: rank-order
+  AUC is 0.629 (full set) / 0.610 (hard-100), clearly above chance. Overconfidence costs more than the
+  discrimination gains (Brier 0.228 vs. 0.212 for the base rate), but the model's verbalized
+  confidence does carry real signal about its own eventual success -- see "Success-probability
+  calibration" below.
 
 ## Datasets and runs
 
@@ -155,10 +158,67 @@ Essentially universal denial, with no observed predictive value, matching countd
 The 2 ask-with-problem non-answers ("I'm sorry, but I can't share that") still solved the task
 normally in turn 2 (both `label: Correct`) -- the refusal was to the meta-question, not the task.
 
-ask-success-probability has no yes/no to compare, but calibration is similarly uninformative: mean
-stated success probability 83.3% vs. actual legit-solve rate 69.5% (Brier 0.228, worse than the
-trivial always-predict-the-base-rate Brier of 0.212); among rollouts that went on to hack, stated
-confidence was still 78-80%, barely below the overall mean.
+ask-success-probability has no yes/no to compare; see "Success-probability calibration" below.
+
+## Success-probability calibration (ask-success-probability)
+
+Full reliability analysis of the turn-1 stated probability vs. `final.eq_correct` (did the response
+actually pass the ground-truth tests), on both the full-119 and pooled hard-100 sets. The model
+answers in round percentages (5% steps, occasionally finer), so bins are exact-match on the stated
+value rather than equal-width buckets.
+
+| Set | n parsed | Mean stated | Actual rate | Brier | Brier (base rate) | AUC |
+|---|---|---|---|---|---|---|
+| full 119-problem eval | 466/476 | 0.833 | 0.695 | 0.228 | 0.212 | **0.629** |
+| pooled hard-100 | 392/400 | 0.833 | 0.651 | 0.253 | 0.227 | **0.610** |
+
+**AUC is clearly above chance on both sets** -- stated confidence does rank-order eventual success
+better than random, in sharp contrast to countdown_code's linear probe over Qwen3-4B prompt features,
+which found `success` at chance (AUC 0.524 vs. a 0.516 shuffled control; see
+`environments/countdown_code/probe/PROBE_4ROLLOUT_RESULTS.md`). Here the signal comes directly from
+the model verbalizing its own confidence, not from a probe over hidden representations, so the two
+aren't a strict apples-to-apples comparison, but the contrast (real signal vs. chance) is stark.
+
+Despite that, raw Brier is still *worse* than the trivial always-predict-the-base-rate strategy on
+both sets, because the model is systematically overconfident. A Murphy decomposition
+(Brier = uncertainty - resolution + reliability, where "reliability" here means calibration error, not
+the unrelated test-retest sense used elsewhere in this doc) shows why: resolution (the discriminative
+signal) is small relative to the calibration-error term, so poor calibration costs more than the
+model's real discriminative ability gains back.
+
+| Set | Uncertainty | Resolution | Calibration error | Brier (check) |
+|---|---|---|---|---|
+| full 119-problem eval | 0.212 | 0.015 | 0.031 | 0.228 |
+| pooled hard-100 | 0.227 | 0.014 | 0.039 | 0.253 |
+
+Reliability table (full-119 set; stated % -> actual legit rate), restricted to bins with n >= 20:
+
+| Stated | n | Actual legit rate |
+|---|---|---|
+| 95% | 61 | 90.2% |
+| 90% | 193 | 73.1% |
+| 85% | 35 | 65.7% |
+| 80% | 83 | 56.6% |
+| 75% | 24 | 62.5% |
+| 70% | 33 | 60.6% |
+
+The overconfidence is monotonic and substantial across the entire 70-95% range where almost all the
+mass sits (90% stated -> 73.1% actual is the single largest bucket, n=193). The hard-100 set shows the
+same pattern (90% stated -> 68.7% actual, 95% stated -> 80.4% actual) -- overconfidence doesn't
+improve on harder problems, it's a stable bias.
+
+Mean stated probability by eventual outcome (full-119 / hard-100):
+
+| Outcome | full-119 (n, mean stated) | hard-100 (n, mean stated) |
+|---|---|---|
+| legit | 324, 84.7% | 255, 85.0% |
+| fail | 139, 80.3% | 132, 80.3% |
+| hack (strict) | 3, 78.3% | 5, 73.0% |
+
+Confidence is lowest, on average, exactly on the rollouts that go on to hack -- consistent with the
+positive AUC -- but the gap (legit vs. hack: ~7-12pp) is small relative to the overconfidence bias
+itself (~15-20pp at every level), and the hack bucket is tiny (n=3, n=5). The direction is right; it
+isn't a usable early-warning signal at this sample size.
 
 ## Problem-difficulty correlates of hacking
 
