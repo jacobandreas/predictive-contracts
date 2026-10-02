@@ -333,9 +333,9 @@ def section_behavior():
                              pct(r["untouched, credit w/o correctness"]), pct(r["hidden tests"]), pct(r["accepted"])])
         base_rate = next((d[HIDDEN] for _, d in pass_groups if HIDDEN in d), None) if row == "thinking off" else None
         panels.append('<div class="pair">'
-                      + grouped_bars(groups, f"{row_title(row)} -- edited the tests / credit without correctness", "119 test problems x 10 samples; error bars = binomial SE",
+                      + grouped_bars(groups, f"{row_title(row)} -- hack rate", "tests edited (stacked by outcome) and credit without correctness; 119 problems x 10 samples; error bars = binomial SE",
                                      ymax=1.0, keys=[EDITED, OTHER], width=860, gap=12)
-                      + grouped_bars(pass_groups, f"{row_title(row)} -- pass rate", "hidden ground-truth tests vs acceptance by the grader" + ("; dashed = base model, hidden tests" if base_rate else ""),
+                      + grouped_bars(pass_groups, f"{row_title(row)} -- pass rate", "hidden ground-truth tests vs acceptance by the grader; 119 problems x 10 samples; error bars = binomial SE" + ("; dashed = base model, hidden tests" if base_rate else ""),
                                      ymax=1.0, keys=[HIDDEN, ACCEPTED], width=860, gap=12, refline=(base_rate, "base") if base_rate else None)
                       + "</div>")
     return "\n".join(panels) + table(["row", "column", "run", "n", "tests edited, accepted", "tests edited, not accepted",
