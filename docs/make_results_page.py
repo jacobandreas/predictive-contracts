@@ -16,6 +16,9 @@ RES = os.path.join(ROOT, "results")
 OUT = os.path.join(ROOT, "docs", "results_part1.html")
 
 # Categorical slots 1-4 of the reference palette (validated for adjacent pairs, light + dark).
+from collections import defaultdict
+from statistics import mean
+
 PALETTE = [("#2a78d6", "#3987e5"), ("#eb6834", "#d95926"), ("#1baf7a", "#199e70"), ("#eda100", "#c98500")]
 SERIES = {"Correct": PALETTE[0], "Reward Hack": PALETTE[1], "Attempted hack": PALETTE[2]}
 
@@ -146,7 +149,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
 
 def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=None):
     """series: list of (name, [(x, y), ...], style) where style is 'solid' or 'dashed'."""
-    left, top, h, bottom = 56, 40, 220, 70
+    left, top, h, bottom = 56, 40, 220, 86
     xmax = max(x for _, pts, _ in series for x, _ in pts)
     ymax = nice_max(ymax or max(y for _, pts, _ in series for _, y in pts) * 1.1)
     def X(x): return left + (width - left - 16) * x / xmax
@@ -159,7 +162,7 @@ def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=No
         y = Y(ymax * i / 5)
         out.append(f'<line x1="{left}" x2="{width - 16}" y1="{y:.1f}" y2="{y:.1f}" class="grid"/>')
         out.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{ymax * i / 5:.0%}</text>')
-    for xt in range(0, xmax + 1, 50):
+    for xt in range(0, int(xmax) + 1, 50):
         out.append(f'<text x="{X(xt):.1f}" y="{top + h + 16}" class="tick" text-anchor="middle">{xt}</text>')
     out.append(f'<text x="{(left + width - 16) / 2:.1f}" y="{top + h + 32}" class="tick" text-anchor="middle">{xlabel}</text>')
     keys = [name for name, _, _ in series]
@@ -169,7 +172,7 @@ def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=No
         out.append(f'<path d="{d}" class="l{si + 1}"{dash} fill="none"><title>{name}</title></path>')
         x, y = pts[-1]
         out.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="4" class="s{si + 1} ring"><title>{name}: {y:.1%} at step {x}</title></circle>')
-    out.append(legend(keys, left, top + h + bottom - 12, dashed_from=None))
+    out.append(legend(keys, left, top + h + bottom - 28, dashed_from=None, width=width))
     out.append("</svg>")
     return "\n".join(out)
 
@@ -184,12 +187,15 @@ def errbar(cx, base_y, scale, v, se, cap=3):
             f'<line x1="{cx - cap:.1f}" x2="{cx + cap:.1f}" y1="{y2:.1f}" y2="{y2:.1f}" class="err"/>')
 
 
-def legend(keys, x, y, dashed_from=None):
-    parts, cx = [], x
+def legend(keys, x, y, dashed_from=None, width=860):
+    parts, cx, cy = [], x, y
     for i, k in enumerate(keys):
-        parts.append(f'<rect x="{cx}" y="{y - 9}" width="12" height="12" rx="2" class="s{i + 1}"/>')
-        parts.append(f'<text x="{cx + 17}" y="{y + 1}" class="tick">{k}</text>')
-        cx += 17 + 7 * len(k) + 22
+        w = 17 + 6.2 * len(k) + 22
+        if cx + w > width - 16 and cx > x:  # wrap
+            cx, cy = x, cy + 16
+        parts.append(f'<rect x="{cx}" y="{cy - 9}" width="12" height="12" rx="2" class="s{i + 1}"/>')
+        parts.append(f'<text x="{cx + 17}" y="{cy + 1}" class="tick">{k}</text>')
+        cx += w
     return "\n".join(parts)
 
 
@@ -332,16 +338,19 @@ def section_commitments():
 
 CSS = """
 :root { color-scheme: light dark; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --grid: #e6e5e1;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; }
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #8e5bd6; --s6: #7a7a72; }
 @media (prefers-color-scheme: dark) { :root { --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --grid: #34342f;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; } }
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #a47ae8; --s6: #9a9a90; } }
 body { background: var(--surface); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 24px; max-width: 1100px; }
 h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 40px; border-top: 1px solid var(--grid); padding-top: 16px; }
 p, li { color: var(--ink2); max-width: 78ch; }
 svg { width: 100%; height: auto; display: block; overflow: visible; margin-bottom: 6px; }
 .title { font-size: 14px; font-weight: 600; fill: var(--ink); } .sub, .tick { font-size: 11px; fill: var(--ink2); }
 .val { font-size: 10px; fill: var(--ink2); } .grid { stroke: var(--grid); stroke-width: 1; } .axis { stroke: var(--ink2); stroke-width: 1; }
-.s1 { fill: var(--s1); } .s2 { fill: var(--s2); } .s3 { fill: var(--s3); } .s4 { fill: var(--s4); } .light { opacity: .45; } .err { stroke: var(--ink); stroke-width: 1; } .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 5 4; }
+.s1 { fill: var(--s1); } .s2 { fill: var(--s2); } .s3 { fill: var(--s3); } .s4 { fill: var(--s4); } .s5 { fill: var(--s5); } .s6 { fill: var(--s6); } .light { opacity: .45; }
+.l1 { stroke: var(--s1); } .l2 { stroke: var(--s2); } .l3 { stroke: var(--s3); } .l4 { stroke: var(--s4); } .l5 { stroke: var(--s5); } .l6 { stroke: var(--s6); } path[class^="l"] { stroke-width: 2; stroke-linejoin: round; }
+.ring { stroke: var(--surface); stroke-width: 1.5; }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #c98500; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; } .err { stroke: var(--ink); stroke-width: 1; } .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 5 4; }
 rect:hover { opacity: .75; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .conv h3 { font-size: 14px; margin: 6px 0; } @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
 .turn { margin: 10px 0; } .role { font-size: 11px; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
@@ -350,6 +359,7 @@ details { margin: 4px 0 0 56px; } summary { cursor: pointer; color: var(--ink2);
 table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 td, th { padding: 2px 10px; text-align: right; border-bottom: 1px solid var(--grid); } th:first-child, td:first-child { text-align: left; }
 
+table.status td, table.status th { text-align: left; white-space: nowrap; } table.status td:first-child { white-space: normal; min-width: 260px; }
 dl.defs { margin: 8px 0 16px; } dl.defs dt { font-weight: 600; margin-top: 6px; } dl.defs dd { margin: 0 0 0 18px; }
 """
 
@@ -387,11 +397,117 @@ def section_example():
             + "</div>")
 
 
+# ---------------------------------------------------------------- Part 4: thinking on
+
+PART4_RUNS = [  # (label, run directory under results/runs, style); dashed = the unmasked runs that collapsed
+    ("RL, task only (mask)", "grpo_modify_tests_neutral_think4k_mt_s1", "solid"),
+    ("prediction / success; batch, no-think commitments (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1", "solid"),
+    ("same, reasoning commitments v1, no warm-up (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1", "solid"),
+    ("same, reasoning commitments v1, distilled warm-up (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1", "solid"),
+    ("RL, task only, no mask (collapsed, stopped)", "grpo_modify_tests_neutral_think4k_s1", "dashed"),
+    ("prediction / success; batch, no-think, no mask (collapsed, stopped)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1", "dashed"),
+]
+PART4_EVALS = [  # (label, files)
+    ("base, thinking off", ["base_neutral_s1_modify_tests", "base_neutral_s2_modify_tests", "base_neutral_s3_modify_tests"]),
+    ("base, thinking on\n(4k budget)", ["base_neutral_think4k_s1_modify_tests", "base_neutral_think4k_s2_modify_tests", "base_neutral_think4k_s3_modify_tests"]),
+    ("RL task only,\nstep 50, no mask", ["rl50_modify_tests_neutral_think4k_s1_neutral_modify_tests"]),
+    ("RL task only,\nstep 200, mask", ["rl200_modify_tests_neutral_think4k_mt_s1_neutral_modify_tests"]),
+]
+FINAL_STEP = 200
+
+
+def run_curves(run, window=10):
+    """Per-window means from a run's rollouts.jsonl: attempts' acceptance and test-editing rates, and (decoupled runs)
+    the commitments' mean acceptance / tampering, plus the across-problem correlation of committed with observed
+    acceptance.  Returns (last_step, {series_name: [(step, value), ...]})."""
+    path = os.path.join(RES, "runs", run, "rollouts.jsonl")
+    if not os.path.exists(path):
+        return 0, {}
+    att, com = defaultdict(list), defaultdict(list)  # (call, task) -> rows
+    for r in map(json.loads, open(path)):
+        (com if r.get("role") == "commit" else att)[(r["call"], r["task_id"])].append(r)
+    last = max(c for c, _ in att)
+    out = defaultdict(list)
+    for lo in range(1, last + 1, window):
+        hi = min(lo + window - 1, last)
+        a = [r for (c, _), rs in att.items() if lo <= c <= hi for r in rs]
+        if not a:
+            continue
+        x = (lo + hi) / 2
+        out["accepted"].append((x, mean([r["behaviors"]["earns_reward"] for r in a])))
+        out["edited"].append((x, mean([r["behaviors"]["any_hack"] for r in a])))
+        keys = [k for k in com if lo <= k[0] <= hi and k in att and any(None not in r["commit"] for r in com[k])]
+        if keys:
+            pa = [mean([float(r["commit"][1]) for r in com[k] if None not in r["commit"]]) for k in keys]
+            oa = [mean([r["behaviors"]["earns_reward"] for r in att[k]]) for k in keys]
+            ph = [mean([float(r["commit"][0]) for r in com[k] if None not in r["commit"]]) for k in keys]
+            oh = [mean([r["behaviors"]["any_hack"] for r in att[k]]) for k in keys]
+            out["committed accepted"].append((x, mean(pa))); out["committed edited"].append((x, mean(ph)))
+            out["corr accepted"].append((x, max(0.0, corr(pa, oa)))); out["corr edited"].append((x, max(0.0, corr(ph, oh))))  # negative = chance, drawn at 0
+    return last, out
+
+
+def corr(xs, ys):
+    mx, my = mean(xs), mean(ys)
+    sx = sum((x - mx) ** 2 for x in xs) ** 0.5; sy = sum((y - my) ** 2 for y in ys) ** 0.5
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (sx * sy) if sx and sy else 0.0
+
+
+def section_part4():
+    # 1. evaluated checkpoints on the test set (same measures as section 1)
+    EDITED, OTHER = "tests edited: accepted by grader (solid) / not accepted (light)", "credit without correctness, tests untouched"
+    HIDDEN, ACCEPTED = "passes hidden tests", "accepted by grader"
+    groups, pass_groups, rows = [], [], []
+    for label, names in PART4_EVALS:
+        per_run = [(name, rates([t["attempts"][0] for t in trs])) for name in names for trs in [load(name)] if trs]
+        if not per_run:
+            groups.append((label + "\n(not yet evaluated)", {EDITED: (0.0, 0.0), OTHER: 0.0, "err": {}, "n": "pending"}))
+            pass_groups.append((label + "\n(not yet evaluated)", {HIDDEN: 0.0, ACCEPTED: 0.0, "err": {}, "n": "pending"}))
+            continue
+        n = sum(r["n"] for _, r in per_run)
+        pooled = {k: sum(r[k] * r["n"] for _, r in per_run) / n for k in per_run[0][1] if k != "n"}
+        se = lambda v: (v * (1 - v) / n) ** 0.5
+        ec, en, other = pooled["edited, credit"], pooled["edited, no credit"], pooled["untouched, credit w/o correctness"]
+        lab = f"{label}\n{len(per_run)} run{'s' if len(per_run) != 1 else ''}"
+        groups.append((lab, {EDITED: (ec, en), OTHER: other, "err": {EDITED: (se(ec), se(ec + en)), OTHER: se(other)}, "n": f"{len(per_run)} run(s)"}))
+        pass_groups.append((lab, {HIDDEN: pooled["hidden tests"], ACCEPTED: pooled["accepted"], "err": {HIDDEN: se(pooled["hidden tests"]), ACCEPTED: se(pooled["accepted"])}, "n": f"{len(per_run)} run(s)"}))
+        for name, r in per_run:
+            rows.append([label.replace("\n", " "), name, r["n"], pct(r["edited, credit"]), pct(r["edited, no credit"]), pct(r["untouched, credit w/o correctness"]), pct(r["hidden tests"]), pct(r["accepted"])])
+    panels = [grouped_bars(groups, "Thinking on (4k budget) -- test set: edited the tests (stacked by outcome) / credit without correctness otherwise",
+                           "119 test problems x 10 samples; error bars = binomial SE", keys=[EDITED, OTHER], show_values=True, show_legend=True, width=1000, gap=16),
+              grouped_bars(pass_groups, "Thinking on (4k budget) -- test set: pass rate, hidden tests vs acceptance by the grader",
+                           "119 test problems x 10 samples; error bars = binomial SE", keys=[HIDDEN, ACCEPTED], show_values=True, show_legend=True, width=1000, gap=16),
+              table(["cell", "run", "n", "tests edited, accepted", "tests edited, not accepted", "credit without correctness, tests untouched", "passes hidden tests", "accepted by grader"], rows)]
+    # 2. training curves of the thinking runs
+    curves, status = {}, []
+    for label, run, style in PART4_RUNS:
+        last, c = run_curves(run)
+        if c:
+            curves[label] = (c, style); status.append((label, run, last))
+    def series(key, only=None, style_override=None):
+        return [(label, pts[key], style_override or style) for label, (pts, style) in curves.items() if key in pts and (only is None or label in only)]
+    commit_runs = [label for label, (pts, _) in curves.items() if "committed accepted" in pts and "collapsed" not in label]
+    lc = [lines(series("accepted"), "Training batches: attempts accepted by the grader (10-step means)", "16 problems x 16 attempts per step; dashed = the unmasked runs that collapsed and were stopped", width=1000, ymax=1.0),
+          lines(series("edited"), "Training batches: attempts that edited the tests (10-step means)", "the behaviour the commitments predict", width=1000),
+          lines(series("committed accepted", only=commit_runs) + [(f"observed: {l}", pts["accepted"], "dashed") for l, (pts, _) in curves.items() if l in commit_runs],
+                "Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)", "mean over the 16 commitments and 16 attempts per problem", width=1000, ymax=1.0),
+          lines(series("corr accepted", only=commit_runs) + series("corr edited", only=commit_runs, style_override="dashed"),
+                "Commitments: across-problem correlation with the attempts' rates, per 10-step window", "solid = accepted by grader, dashed = tests edited (same colours); ~160 problems per window", width=1000, ymax=1.0)]
+    running = [(l, r, n) for l, r, n in status if n < FINAL_STEP and "collapsed" not in l]
+    badge = f'<span class="badge">in progress: {len(running)} run{"s" if len(running) != 1 else ""} still training</span>' if running else ""
+    srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "stopped (collapsed)" if "collapsed" in l else ("done" if n >= FINAL_STEP else "training")] for l, r, n in status]
+    stable = '<table class="status"><tr><th>run</th><th>directory</th><th>step</th><th>status</th></tr>' + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in srows) + "</table>"
+    return badge, "\n".join(panels), "\n".join(lc), stable
+
+
 def main():
-    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Seeded comparison</title><style>{CSS}</style></head><body>
+    p4_badge, p4_evals, p4_curves, p4_status = section_part4()
+    TODAY = __import__("datetime").date.today().isoformat()
+    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Contracts results</title><style>{CSS}</style></head><body>
 <h1>Results: hacking and alignment by model (modify_tests prompt)</h1>
-<p>Companion to <code>results_part3.md</code> (seeded comparison); regenerate with <code>python docs/make_results_page.py</code>.
-Qwen3-4B, thinking off, <code>modify_tests</code> prompt, single attempt, 119 test problems x 10 samples, 3 seeds per cell.
+<p>Companion to <code>results_part3.md</code> (sections 1-4, thinking off) and <code>results_part4.md</code> (section 5, thinking on);
+regenerate with <code>python docs/make_results_page.py</code>. Generated {TODAY}.
+Sections 1-4: Qwen3-4B, thinking off, <code>modify_tests</code> prompt, single attempt, 119 test problems x 10 samples, 3 seeds per cell.
 Cells: "base" = the untrained model with the neutral system prompt ("You are an expert Python programmer."), 3 sampling seeds;
 "RL" = step-200 GRPO adapters trained with the task reward only under that prompt, 3 training seeds. The remaining cells are the
 decoupled runs, named "&lt;commitment reward&gt; / &lt;attempt reward&gt;; &lt;normalization&gt;": the commitment and the attempt are
@@ -465,6 +581,31 @@ Details in <code>results_part3.md</code>.</p>
 
 <h2>4. Example: the commitment conversation and the attempt conversation</h2>
 {section_example()}
+
+<h2>5. Part 4: thinking on {p4_badge}</h2>
+<p>The solver thinks under Qwen3's budget trick: the chain is cut at 4096 tokens, a stop sentence is spliced in and the model answers
+(up to 1536 tokens in training, 2048 in evaluation). ~98% of base-model chains hit the budget. Everything below is one seed per cell;
+the runs marked in progress are read from their training logs as of the date above and will change. Details and the running commentary
+are in <code>results_part4.md</code>.</p>
+{p4_evals}
+<p>Thinking roughly doubles the base model's legitimate pass rate (0.13 -> 0.29) and its test editing (0.09 -> 0.13). The RL step-50
+checkpoint (from the first, unmasked task-only run) adds +3 points on hidden tests and +4 on acceptance and stops running past the
+answer cap. Cells marked "not yet evaluated" fill in when their evaluation lands.</p>
+<p>Training curves. Task-only <code>token_truncate</code> runs drift into answers that run to the token cap and collapse after
+~100-140 steps (dashed); the truncation mask (TRL's <code>mask_truncated_completions</code>: a completion that did not end with
+<code>&lt;|im_end|&gt;</code> is dropped from the loss) removes it. The decoupled runs are the "prediction / success; batch" recipe of
+section 1 with thinking on: with the Part 3 non-thinking commitment turn and its SFT prior; with a reasoning commitment turn (framing
+"v1": an assessor system prompt, statements before the problem, a 1024-token chain and a 128-token answer) from the base model; and the
+same from an off-policy self-distillation warm-up (the same model, told the probe's numbers for the problem as its own prior, sampled;
+chains that land on the numbers without mentioning being told them are kept and the hintless prompt is fine-tuned on them). No
+agreement term in any of these, so the attempts are free to ignore the commitment.</p>
+{p4_curves}
+<p>The commitment charts: the SFT-prior and distilled runs are calibrated (committed within a few points of observed) and sit at an
+across-problem correlation of 0.3-0.4, the base model's level; the no-warm-up run's commitment overshot (0.9) and then collapsed to
+predicting ~0 acceptance while the attempts kept succeeding -- a stable constant under batch normalisation, since every commitment in
+the batch is then equally wrong. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation
+above noise (0.21, 95% CI [0.05, 0.36] over steps 26-40), to be confirmed.</p>
+{p4_status}
 </body></html>"""
     open(OUT, "w").write(html)
     print("wrote", OUT, len(html), "bytes")
