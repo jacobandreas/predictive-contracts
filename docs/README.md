@@ -1,4 +1,4 @@
-# Contracts project: code overview
+# Learning Predictive Contracts
 
 We're interested in training language models to make forecasts about their own
 future behavior. the basic paradigm is as follows: given a prompt / problem
