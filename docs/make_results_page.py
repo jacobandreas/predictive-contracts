@@ -312,23 +312,28 @@ def section_prediction():
             if not found:
                 label = cell_label(col, cell, found) if cell.get("commit") else f"{col}\n(not evaluated)"
                 groups.append((label, {})); continue
-            trs = [t for trs_ in found for t in trs_]  # pool the runs
-            d = {"n": f"{len(trs)} rollouts"}
-            for role, candidates in ROLES.items():
-                stmt = next((c for c in candidates if c in trs[0]["precommit"]["answers"]), None)
-                if stmt is None:
-                    continue
-                pairs = [(float(t["precommit"]["answers"][stmt]), float(t["final"]["behaviors"][stmt])) for t in trs if t["precommit"]["answers"].get(stmt) is not None]
-                pred, act = [p for p, _ in pairs], [a for _, a in pairs]
-                a = auc(pred, act)
-                if a == a:
-                    d[role] = a
-                brier = mean((p - y) ** 2 for p, y in pairs); var = mean((y - mean(act)) ** 2 for y in act)
-                rows.append([row_title(row), col.replace("\n", " "), f"{role} ({stmt})", pct(mean(act)), f"{mean(pred):.2f}", f"{brier:.3f} / {var:.3f}", f"{a:.2f}" if a == a else "-"])
+            # AUC per run, then averaged over the cell's runs: pooling rollouts across seeds whose commitments sit at different
+            # constants (one seed says 1.0 to everything, another 0.0) would manufacture a spurious anti-correlation.
+            d, per_role = {"n": f"{sum(len(t) for t in found)} rollouts"}, defaultdict(list)
+            for name, trs in zip([n for n in cell["commit"] if load(n)], found):
+                for role, candidates in ROLES.items():
+                    stmt = next((c for c in candidates if c in trs[0]["precommit"]["answers"]), None)
+                    if stmt is None:
+                        continue
+                    pairs = [(float(t["precommit"]["answers"][stmt]), float(t["final"]["behaviors"][stmt])) for t in trs if t["precommit"]["answers"].get(stmt) is not None]
+                    pred, act = [p for p, _ in pairs], [a for _, a in pairs]
+                    a = auc(pred, act)
+                    if a == a:
+                        per_role[role].append(a)
+                    brier = mean((p - y) ** 2 for p, y in pairs); var = mean((y - mean(act)) ** 2 for y in act)
+                    rows.append([row_title(row), col.replace("\n", " "), name, f"{role} ({stmt})", pct(mean(act)), f"{mean(pred):.2f}", f"{brier:.3f} / {var:.3f}",
+                                 f"{a:.2f}" if a == a else "- (constant outcome)"])
+            for role, aucs in per_role.items():
+                d[role] = mean(aucs)
             groups.append((cell_label(col, cell, found), d))
         panels.append(grouped_bars(groups, f"{row_title(row)} -- instance-level AUC of the commitments, by statement",
                                    "commitment-prompt evaluation, 119 problems x 10 samples; 0.5 = no information", ymax=1.0, width=1000, keys=list(ROLES), show_values=True, refline=(0.5, "chance"), gap=12))
-    return "\n".join(panels) + table(["row", "column", "statement (as asked)", "observed rate", "mean prediction", "Brier / base-rate Brier", "AUC"], rows)
+    return "\n".join(panels) + table(["row", "column", "run", "statement (as asked)", "observed rate", "mean prediction", "Brier / base-rate Brier", "AUC"], rows)
 
 
 def section_mcq():
@@ -540,8 +545,8 @@ evaluated.</p>
 
 <h2>2. Prediction</h2>
 <p>Each bar is the rank AUC of a model's commitment answers (probabilities, given before solving) against what the scorer observed
-in the same rollout, pooled over the cell's runs: 0.5 means the commitment carries no instance-level information about the
-model's own behaviour. The base and RL columns are those models asked the same two questions under the commitment prompt
+in the same rollout, computed per run and averaged over the cell's runs (runs whose outcome is constant, e.g. 100% tampering, have no
+AUC and are left out): 0.5 means the commitment carries no instance-level information about the model's own behaviour. The base and RL columns are those models asked the same two questions under the commitment prompt
 (they were never trained on it).</p>
 {section_prediction()}
 <p>Thinking off: the prediction+success recipe is the only trained cell with informative commitments on the success statement
