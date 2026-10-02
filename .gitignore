@@ -19,3 +19,4 @@ results
 # Local scratch
 *.log
 *.err
+.env

@@ -2,11 +2,13 @@
 
 All model access in this project goes through this class so that the same
 code can talk to a local vLLM server on the cluster (the default) or to any
-other OpenAI-compatible endpoint.
+other OpenAI-compatible endpoint, e.g. OpenRouter (base_url
+https://openrouter.ai/api/v1, api_key from OPENROUTER_API_KEY).
 """
 import math
 import os
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from openai import OpenAI
 from transformers import AutoTokenizer  # imported here, not lazily: a first import from many threads at once fails
@@ -19,6 +21,8 @@ class LLM:
         self,
         model="Qwen/Qwen3-4B",
         base_url=None,
+        api_key=None,
+        reasoning_model=False,
         thinking=False,
         temperature=0.7,
         top_p=0.95,
@@ -26,10 +30,20 @@ class LLM:
         workers=64,
         think_budget=None,
         tokenizer=None,
+        reasoning_effort=None,
     ):
         base_url = base_url or os.environ.get("LLM_BASE_URL", "http://localhost:8000/v1")
-        self.client = OpenAI(base_url=base_url, api_key="none", timeout=1800, max_retries=5)
+        api_key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY") or "none"
+        self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=1800, max_retries=5)
         self.model = model
+        # OpenRouter ignores the vLLM/Qwen3 `chat_template_kwargs.enable_thinking` flag below and ignores
+        # thinking control via its own `reasoning` field instead; some OpenRouter-hosted models (e.g. newer
+        # Qwen releases) default reasoning on, which can eat the whole max_tokens budget with no answer left.
+        self.openrouter = "openrouter" in base_url
+        self.reasoning_effort = reasoning_effort  # OpenRouter only: "low"/"medium"/"xhigh" (model-dependent); caps reasoning length
+        # OpenAI-style reasoning models (o1/o3/o4-...) reject custom temperature/top_p (only the default is
+        # allowed) and have no notion of Qwen3's enable_thinking chat-template kwarg.
+        self.reasoning_model = reasoning_model
         self.thinking = thinking
         self.temperature = temperature
         self.top_p = top_p
@@ -49,16 +63,23 @@ class LLM:
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
         if thinking and think_budget:
             return [self.chat_budgeted(messages, think_budget, max_tokens, stop_text) for _ in range(n)]
-        r = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            n=n,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            max_tokens=max_tokens,
-            # Qwen3-specific: the chat template takes an enable_thinking flag.
-            extra_body={"chat_template_kwargs": {"enable_thinking": thinking}},
-        )
+        kwargs = dict(model=self.model, messages=messages, n=n, max_tokens=max_tokens)
+        if not self.reasoning_model:
+            extra_body = {"chat_template_kwargs": {"enable_thinking": thinking}}
+            if self.openrouter:
+                extra_body["reasoning"] = {"enabled": thinking}
+                if thinking and self.reasoning_effort:
+                    extra_body["reasoning"]["effort"] = self.reasoning_effort
+            kwargs.update(temperature=self.temperature, top_p=self.top_p, extra_body=extra_body)
+        # OpenRouter occasionally returns a 200 with `choices: null` (a transient upstream-provider glitch,
+        # not a request-specific error) -- not retried by the client's own max_retries, which only covers
+        # retryable HTTP statuses. Retry the request itself a few times before giving up.
+        for attempt in range(4):
+            r = self.client.chat.completions.create(**kwargs)
+            if r.choices:
+                break
+        else:
+            raise RuntimeError(f"empty/null choices after 4 attempts: {r}")
         return [
             {
                 "content": c.message.content or "",
@@ -92,9 +113,26 @@ class LLM:
         content = c2.text if forced else (c.message.content or "") + c2.text
         return {"content": content, "reasoning": reasoning + ("\n" + stop_text if forced else ""), "finish_reason": c2.finish_reason, "think_forced": forced}
 
-    def chat_many(self, message_lists, n=1, **kw):
+    def chat_many(self, message_lists, n=1, desc=None, callback=None, **kw):
+        """Sample for each item in `message_lists` concurrently. With `desc`, prints one progress line (to
+        stdout, flushed) as each individual request completes -- rather than only once the whole batch is
+        done -- so a long run shows live progress instead of going silent until the end. With `callback`,
+        calls `callback(i, result)` synchronously (in the calling thread) as each result comes in, so the
+        caller can score and write it to disk immediately rather than waiting for the whole batch to return."""
+        results = [None] * len(message_lists)
+        start = time.monotonic()
         with ThreadPoolExecutor(self.workers) as ex:
-            return list(ex.map(lambda m: self.chat(m, n=n, **kw), message_lists))
+            futures = {ex.submit(self.chat, m, n=n, **kw): i for i, m in enumerate(message_lists)}
+            done = 0
+            for fut in as_completed(futures):
+                i = futures[fut]
+                results[i] = fut.result()
+                if callback:
+                    callback(i, results[i])
+                done += 1
+                if desc:
+                    print(f"{desc}: {done}/{len(message_lists)} ({time.monotonic() - start:.0f}s elapsed)", flush=True)
+        return results
 
     def next_token_probs(self, messages, top=20):
         """Probability of each candidate first token of the assistant's reply.
