@@ -156,10 +156,12 @@ def nice_max(v):
     return next(m for m in (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0) if m >= min(v, 1.0))
 
 
-def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, show_legend=True, show_values=True, stack_note=None, refline=None, gap=2):
+def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, show_legend=True, show_values=True, stack_note=None, refline=None, gap=2, fmt="pct"):
     """groups: list of (label, {series: value}). One cluster of thin bars per group; `gap` px between the bars of a cluster.
     A value may be a (bottom, top) tuple for a two-part stacked bar.  An empty dict draws an empty slot with its label."""
     keys = keys or []
+    tick = (lambda v: f"{v:.0%}") if fmt == "pct" else (lambda v: f"{v:.1f}")
+    val = (lambda v: f"{v:.1%}") if fmt == "pct" else (lambda v: f"{v:.2f}")
     def total(v):
         return sum(v) if isinstance(v, tuple) else v
     ymax = nice_max(ymax or max([total(v) for _, d in groups for v in d.values() if isinstance(v, (float, tuple))] or [0.1]) * 1.1)
@@ -174,7 +176,7 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
     for i in range(6):  # gridlines + y ticks
         y = top + h - i * h / 5
         out.append(f'<line x1="{left}" x2="{width - 16}" y1="{y:.1f}" y2="{y:.1f}" class="grid"/>')
-        out.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{ymax * i / 5:.0%}</text>')
+        out.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{tick(ymax * i / 5)}</text>')
     for gi, (label, d) in enumerate(groups):
         x0 = left + gi * band + (band - bar_w * len(keys) - gap * (len(keys) - 1)) / 2
         for ki, k in enumerate(keys):
@@ -198,11 +200,11 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
                 bh = h * v / ymax
                 y = top + h - bh
                 out.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" rx="3" fill="{COLORS.get(k, GREY[0])}">'
-                           f'<title>{label} — {k}: {v:.1%}{f" ± {err:.1%}" if err else ""} ({d.get("n", "?")})</title></rect>')
+                           f'<title>{label} — {k}: {val(v)}{f" ± {val(err)}" if err else ""} ({d.get("n", "?")})</title></rect>')
                 if err:
                     out.append(errbar(x + bar_w / 2, top + h, h / ymax, v, err))
             if show_values and v >= 0.005:
-                out.append(f'<text x="{x + bar_w / 2:.1f}" y="{max(y - 4, top + 10):.1f}" class="val" text-anchor="middle">{v:.1%}</text>')
+                out.append(f'<text x="{x + bar_w / 2:.1f}" y="{max(y - 4, top + 10):.1f}" class="val" text-anchor="middle">{val(v)}</text>')
         for li, line in enumerate(label.split("\n")):
             cx, cy = left + gi * band + band / 2, top + h + 16 + 13 * li
             if line.startswith("(training") or line.startswith("(not yet"):  # an orange "in progress" pill, like the section badge
@@ -346,7 +348,9 @@ def auc(scores, labels):  # rank AUC = P(score of a positive > score of a negati
 
 
 def section_prediction():
-    """Per row of the grid: instance-level AUC of the commitments per statement, from the commitment-prompt evaluations."""
+    """Per row of the grid: across-problem correlation between a model's mean committed probability on a problem and the
+    problem's observed rate (over its 10 evaluation samples), per statement; computed per run and averaged over the cell's
+    runs.  The table also gives the instance-level AUC."""
     panels, rows = [], []
     for row, cells in GRID.items():
         groups = []
@@ -358,28 +362,31 @@ def section_prediction():
             if not found:
                 label = cell_label(col, cell, found) if cell.get("commit") else f"{col}\n(not evaluated)"
                 groups.append((label, {})); continue
-            # AUC per run, then averaged over the cell's runs: pooling rollouts across seeds whose commitments sit at different
-            # constants (one seed says 1.0 to everything, another 0.0) would manufacture a spurious anti-correlation.
             d, per_role = {"n": f"{sum(len(t) for t in found)} rollouts"}, defaultdict(list)
             for name, trs in zip([resolve(n) for n in cell["commit"] if load(n)], found):
                 for role, candidates in ROLES.items():
                     stmt = next((c for c in candidates if c in trs[0]["precommit"]["answers"]), None)
                     if stmt is None:
                         continue
-                    pairs = [(float(t["precommit"]["answers"][stmt]), float(t["final"]["behaviors"][stmt])) for t in trs if t["precommit"]["answers"].get(stmt) is not None]
-                    pred, act = [p for p, _ in pairs], [a for _, a in pairs]
-                    a = auc(pred, act)
-                    if a == a:
-                        per_role[role].append(a)
-                    brier = mean((p - y) ** 2 for p, y in pairs); var = mean((y - mean(act)) ** 2 for y in act)
-                    rows.append([row_title(row), col.replace("\n", " "), name, f"{role} ({stmt})", pct(mean(act)), f"{mean(pred):.2f}", f"{brier:.3f} / {var:.3f}",
-                                 f"{a:.2f}" if a == a else "- (constant outcome)"])
-            for role, aucs in per_role.items():
-                d[role] = mean(aucs)
+                    by_task = defaultdict(lambda: ([], []))
+                    for t in trs:
+                        if t["precommit"]["answers"].get(stmt) is not None:
+                            by_task[t["task_id"]][0].append(float(t["precommit"]["answers"][stmt])); by_task[t["task_id"]][1].append(float(t["final"]["behaviors"][stmt]))
+                    pm = [mean(p) for p, _ in by_task.values()]; om = [mean(o) for _, o in by_task.values()]
+                    sd = lambda xs: (sum((x - mean(xs)) ** 2 for x in xs) / len(xs)) ** 0.5
+                    c = corr(pm, om) if sd(pm) > 0 and sd(om) > 0 else float("nan")  # undefined when the outcome (or the commitment) is constant
+                    pairs = [(p, o) for ps, os_ in by_task.values() for p, o in zip(ps, os_)]
+                    a = auc([p for p, _ in pairs], [o for _, o in pairs])
+                    if c == c:
+                        per_role[role].append(c)
+                    rows.append([row_title(row), col.replace("\n", " "), name, f"{role} ({stmt})", pct(mean(om)), f"{mean(pm):.2f}",
+                                 f"{sd(pm):.3f} / {sd(om):.3f}", f"{c:.2f}" if c == c else "- (constant)", f"{a:.2f}" if a == a else "- (constant outcome)"])
+            for role, cs in per_role.items():
+                d[role] = max(0.0, mean(cs))  # negative correlations are drawn at 0 (the table has the value)
             groups.append((cell_label(col, cell, found, cell["commit"]), d))
-        panels.append(grouped_bars(groups, f"{row_title(row)} -- instance-level AUC of the commitments, by statement",
-                                   "commitment-prompt evaluation, 119 problems x 10 samples; 0.5 = no information", ymax=1.0, width=1000, keys=list(ROLES), show_values=True, refline=(0.5, "chance"), gap=12))
-    return "\n".join(panels) + table(["row", "column", "run", "statement (as asked)", "observed rate", "mean prediction", "Brier / base-rate Brier", "AUC"], rows)
+        panels.append(grouped_bars(groups, f"{row_title(row)} -- across-problem correlation of the mean committed probability with the observed rate",
+                                   "119 problems x 10 samples per run, averaged over runs; 0 = no information", ymax=1.0, width=1000, keys=list(ROLES), show_values=True, gap=12, fmt="num"))
+    return "\n".join(panels) + table(["row", "column", "run", "statement (as asked)", "observed rate", "mean prediction", "sd across problems: prediction / observed", "correlation", "instance AUC"], rows)
 
 
 def section_mcq():
