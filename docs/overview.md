@@ -43,7 +43,7 @@ scripts/
   sync.sh               push code + data to the cluster; pull results back
 docs/
   overview.md (this), results_part{1,2,3,4}.md, commitment_game.md, probe_summaries/,
-  make_results_page.py -> results_part1.html (the charts page)
+  make_results_page.py -> results.html (the charts page)
 data/
   leetcode/leetcode_test_medhard.jsonl            119 medium/hard LeetCode problems (eval split)
   leetcode/leetcode_train_medhard_filtered.jsonl  992 problems (RL training split)
@@ -226,5 +226,5 @@ Training on the cluster, all Part 4, one seed each, thinking on with the 4k budg
 | `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1` | same with reasoning commitments (v1), no warm-up | 99; commitments collapsed to ~0 |
 | `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1` | same, from the distilled warm start | 40 (slow) |
 
-Results and the running commentary are in `results_part4.md`; the page (`results_part1.html`) carries the
+Results and the running commentary are in `results_part4.md`; the page (`results.html`) carries the
 Part 3 cells and a Part 4 section with the training curves of these runs, marked in progress.

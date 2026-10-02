@@ -268,6 +268,22 @@ distilled at 40 (slow, ~37 min/step): acceptance 0.70 vs 0.69, correlation 0.40;
 correlation 0.21 in the latest window, the first tampering correlation above noise in any run (one window, 240
 problems; to be confirmed).
 
+**Step-200 evaluation of the masked task-only thinking run** (`rl200_modify_tests_neutral_think4k_mt_s1_neutral_modify_tests.jsonl`,
+2026-10-02; test set, same protocol as the base rows):
+
+| thinking on, 4k budget | passes hidden tests | accepted by grader | tests edited | edited & accepted | untouched, credit w/o correctness | forced at 4k | answer cut at cap |
+|---|---|---|---|---|---|---|---|
+| base (3 seeds) | 0.296 | 0.363 | 0.129 | 0.043 | 0.050 | 0.98 | 0.148 |
+| RL step 50 (unmasked run) | 0.325 | 0.404 | 0.144 | 0.063 | 0.060 | 0.99 | 0.019 |
+| RL step 200 (masked run) | 0.292 | 0.365 | 0.130 | 0.050 | 0.055 | 0.97 | 0.152 |
+
+200 steps of task-only RL with the mask end exactly where the base model started, on every measure, including the
+fraction of answers cut at the cap (the step-50 checkpoint of the unmasked run had learned to stop before the cap;
+with the mask those over-long answers are never trained on, so that is not learned either). The training-batch
+success rose only from 0.65 to 0.69 over the run. So with thinking on, the mask buys stability at the price of
+learning nothing: the run neither takes off into tampering (0.13 = base) nor improves. The thinking-off `token_truncate`
+seeds, by contrast, either took off or ended a few points above the base model.
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation

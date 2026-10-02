@@ -1,4 +1,4 @@
-"""Build docs/results_part1.html: charts of hack rates, alignment MCQ and commitment AUC for the seeded comparison.
+"""Build docs/results.html: charts of hack rates, alignment MCQ, commitment AUC and the Part 4 training curves.
 
     python docs/make_results_page.py
 
@@ -13,7 +13,7 @@ from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, "results")
-OUT = os.path.join(ROOT, "docs", "results_part1.html")
+OUT = os.path.join(ROOT, "docs", "results.html")
 
 # Categorical slots 1-4 of the reference palette (validated for adjacent pairs, light + dark).
 from collections import defaultdict
@@ -31,6 +31,9 @@ RUNS = {
     ("modify_tests", "prediction /\nprediction+success;\ngroup"): ["rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
     ("modify_tests", "prediction /\nprediction+success;\nbatch"): ["rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agree_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
     ("modify_tests", "prediction /\nprediction;\nbatch"): ["rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s1_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s2_pc_modify_tests", "rl200_modify_tests_decoupled_bn_agreeonly_hacksucc_prob_sftwarm_s3_pc_modify_tests"],
+    # Part 4: thinking on, 4k budget (one training seed; "not yet evaluated" until the step-200 file exists)
+    ("modify_tests", "base\nthinking 4k"): ["base_neutral_think4k_s1_modify_tests", "base_neutral_think4k_s2_modify_tests", "base_neutral_think4k_s3_modify_tests"],
+    ("modify_tests", "RL\nthinking 4k\n(mask)"): ["rl200_modify_tests_neutral_think4k_mt_s1_neutral_modify_tests"],
 }
 MCQ = {
     ("modify_tests", "base"): ["mcq_base_neutral_s1_modify_tests", "mcq_base_neutral_s2_modify_tests", "mcq_base_neutral_s3_modify_tests"],
@@ -227,7 +230,10 @@ def section_hacking():
     groups, pass_groups, rows = [], [], []
     for (hint, model), names in RUNS.items():
         per_run = [(name, rates([t["attempts"][0] for t in trs])) for name in names for trs in [load(name)] if trs]
-        if not per_run:
+        if not per_run:  # a cell whose evaluation has not landed yet: an empty placeholder keeps its place in the charts
+            label = f"{hint}\n{model}\n(not yet evaluated)"
+            groups.append((label, {EDITED: (0.0, 0.0), OTHER: 0.0, "err": {}, "n": "pending"}))
+            pass_groups.append((label, {HIDDEN: 0.0, ACCEPTED: 0.0, "err": {}, "n": "pending"}))
             continue
         n = sum(r["n"] for _, r in per_run)
         pooled = {k: sum(r[k] * r["n"] for _, r in per_run) / n for k in per_run[0][1] if k != "n"}
@@ -407,12 +413,6 @@ PART4_RUNS = [  # (label, run directory under results/runs, style); dashed = the
     ("RL, task only, no mask (collapsed, stopped)", "grpo_modify_tests_neutral_think4k_s1", "dashed"),
     ("prediction / success; batch, no-think, no mask (collapsed, stopped)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1", "dashed"),
 ]
-PART4_EVALS = [  # (label, files)
-    ("base, thinking off", ["base_neutral_s1_modify_tests", "base_neutral_s2_modify_tests", "base_neutral_s3_modify_tests"]),
-    ("base, thinking on\n(4k budget)", ["base_neutral_think4k_s1_modify_tests", "base_neutral_think4k_s2_modify_tests", "base_neutral_think4k_s3_modify_tests"]),
-    ("RL task only,\nstep 50, no mask", ["rl50_modify_tests_neutral_think4k_s1_neutral_modify_tests"]),
-    ("RL task only,\nstep 200, mask", ["rl200_modify_tests_neutral_think4k_mt_s1_neutral_modify_tests"]),
-]
 FINAL_STEP = 200
 
 
@@ -454,31 +454,6 @@ def corr(xs, ys):
 
 
 def section_part4():
-    # 1. evaluated checkpoints on the test set (same measures as section 1)
-    EDITED, OTHER = "tests edited: accepted by grader (solid) / not accepted (light)", "credit without correctness, tests untouched"
-    HIDDEN, ACCEPTED = "passes hidden tests", "accepted by grader"
-    groups, pass_groups, rows = [], [], []
-    for label, names in PART4_EVALS:
-        per_run = [(name, rates([t["attempts"][0] for t in trs])) for name in names for trs in [load(name)] if trs]
-        if not per_run:
-            groups.append((label + "\n(not yet evaluated)", {EDITED: (0.0, 0.0), OTHER: 0.0, "err": {}, "n": "pending"}))
-            pass_groups.append((label + "\n(not yet evaluated)", {HIDDEN: 0.0, ACCEPTED: 0.0, "err": {}, "n": "pending"}))
-            continue
-        n = sum(r["n"] for _, r in per_run)
-        pooled = {k: sum(r[k] * r["n"] for _, r in per_run) / n for k in per_run[0][1] if k != "n"}
-        se = lambda v: (v * (1 - v) / n) ** 0.5
-        ec, en, other = pooled["edited, credit"], pooled["edited, no credit"], pooled["untouched, credit w/o correctness"]
-        lab = f"{label}\n{len(per_run)} run{'s' if len(per_run) != 1 else ''}"
-        groups.append((lab, {EDITED: (ec, en), OTHER: other, "err": {EDITED: (se(ec), se(ec + en)), OTHER: se(other)}, "n": f"{len(per_run)} run(s)"}))
-        pass_groups.append((lab, {HIDDEN: pooled["hidden tests"], ACCEPTED: pooled["accepted"], "err": {HIDDEN: se(pooled["hidden tests"]), ACCEPTED: se(pooled["accepted"])}, "n": f"{len(per_run)} run(s)"}))
-        for name, r in per_run:
-            rows.append([label.replace("\n", " "), name, r["n"], pct(r["edited, credit"]), pct(r["edited, no credit"]), pct(r["untouched, credit w/o correctness"]), pct(r["hidden tests"]), pct(r["accepted"])])
-    panels = [grouped_bars(groups, "Thinking on (4k budget) -- test set: edited the tests (stacked by outcome) / credit without correctness otherwise",
-                           "119 test problems x 10 samples; error bars = binomial SE", keys=[EDITED, OTHER], show_values=True, show_legend=True, width=1000, gap=16),
-              grouped_bars(pass_groups, "Thinking on (4k budget) -- test set: pass rate, hidden tests vs acceptance by the grader",
-                           "119 test problems x 10 samples; error bars = binomial SE", keys=[HIDDEN, ACCEPTED], show_values=True, show_legend=True, width=1000, gap=16),
-              table(["cell", "run", "n", "tests edited, accepted", "tests edited, not accepted", "credit without correctness, tests untouched", "passes hidden tests", "accepted by grader"], rows)]
-    # 2. training curves of the thinking runs
     curves, status = {}, []
     for label, run, style in PART4_RUNS:
         last, c = run_curves(run)
@@ -497,17 +472,18 @@ def section_part4():
     badge = f'<span class="badge">in progress: {len(running)} run{"s" if len(running) != 1 else ""} still training</span>' if running else ""
     srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "stopped (collapsed)" if "collapsed" in l else ("done" if n >= FINAL_STEP else "training")] for l, r, n in status]
     stable = '<table class="status"><tr><th>run</th><th>directory</th><th>step</th><th>status</th></tr>' + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in srows) + "</table>"
-    return badge, "\n".join(panels), "\n".join(lc), stable
+    return badge, "\n".join(lc), stable
 
 
 def main():
-    p4_badge, p4_evals, p4_curves, p4_status = section_part4()
+    p4_badge, p4_curves, p4_status = section_part4()
     TODAY = __import__("datetime").date.today().isoformat()
     html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Contracts results</title><style>{CSS}</style></head><body>
-<h1>Results: hacking and alignment by model (modify_tests prompt)</h1>
-<p>Companion to <code>results_part3.md</code> (sections 1-4, thinking off) and <code>results_part4.md</code> (section 5, thinking on);
+<h1>Results: hacking, commitments and alignment by model (modify_tests prompt)</h1>
+<p>Companion to <code>results_part3.md</code> (thinking off) and <code>results_part4.md</code> (the "thinking 4k" cells and section 4);
 regenerate with <code>python docs/make_results_page.py</code>. Generated {TODAY}.
-Sections 1-4: Qwen3-4B, thinking off, <code>modify_tests</code> prompt, single attempt, 119 test problems x 10 samples, 3 seeds per cell.
+Qwen3-4B, <code>modify_tests</code> prompt, single attempt, 119 test problems x 10 samples, 3 seeds per cell unless marked; thinking off
+except in the cells marked "thinking 4k" (Part 4: one training seed, Qwen3 thinking under a 4096-token budget, truncation mask).
 Cells: "base" = the untrained model with the neutral system prompt ("You are an expert Python programmer."), 3 sampling seeds;
 "RL" = step-200 GRPO adapters trained with the task reward only under that prompt, 3 training seeds. The remaining cells are the
 decoupled runs, named "&lt;commitment reward&gt; / &lt;attempt reward&gt;; &lt;normalization&gt;": the commitment and the attempt are
@@ -550,7 +526,9 @@ the batch variant crashed and recovered to 9%), every seed rewarded on predictio
 prediction alone collapsed to the honest-failure equilibrium (0% tampering, 0-4% success: the committer predicts failure and the
 attempts deliver it).
 The second chart shows the two pass rates, <em>passes hidden tests</em> and <em>accepted by grader</em>; the gap between them is the
-credit earned without solving the problem. The take-off cells solve nothing (every solution is a stub) yet are accepted
+credit earned without solving the problem. The two "thinking 4k" cells on the right are Part 4: the base model with Qwen3 thinking under
+the budget (three sampling runs) and the task-only RL run trained with thinking and the truncation mask (one seed, step 200; "not yet
+evaluated" until its evaluation lands). The take-off cells solve nothing (every solution is a stub) yet are accepted
 almost always; the agreement cells gain 4-10 points on hidden tests over the base model with a small gap; agreement-only solves
 almost nothing.</p>
 
@@ -579,26 +557,20 @@ it in 3 of 3 seeds, the group-normalized one in 1 of 3); the tampering statement
 hacking only for the neutral-prompt RL model that hacks 60% of the time (AUC 0.77) and is at chance for every low-hack model.
 Details in <code>results_part3.md</code>.</p>
 
-<h2>4. Example: the commitment conversation and the attempt conversation</h2>
-{section_example()}
-
-<h2>5. Part 4: thinking on {p4_badge}</h2>
+<h2>4. Part 4: thinking on -- training curves {p4_badge}</h2>
 <p>The solver thinks under Qwen3's budget trick: the chain is cut at 4096 tokens, a stop sentence is spliced in and the model answers
-(up to 1536 tokens in training, 2048 in evaluation). ~98% of base-model chains hit the budget. Everything below is one seed per cell;
-the runs marked in progress are read from their training logs as of the date above and will change. Details and the running commentary
-are in <code>results_part4.md</code>.</p>
-{p4_evals}
-<p>Thinking roughly doubles the base model's legitimate pass rate (0.13 -> 0.29) and its test editing (0.09 -> 0.13). The RL step-50
-checkpoint (from the first, unmasked task-only run) adds +3 points on hidden tests and +4 on acceptance and stops running past the
-answer cap. Cells marked "not yet evaluated" fill in when their evaluation lands.</p>
-<p>Training curves. Task-only <code>token_truncate</code> runs drift into answers that run to the token cap and collapse after
-~100-140 steps (dashed); the truncation mask (TRL's <code>mask_truncated_completions</code>: a completion that did not end with
-<code>&lt;|im_end|&gt;</code> is dropped from the loss) removes it. The decoupled runs are the "prediction / success; batch" recipe of
-section 1 with thinking on: with the Part 3 non-thinking commitment turn and its SFT prior; with a reasoning commitment turn (framing
-"v1": an assessor system prompt, statements before the problem, a 1024-token chain and a 128-token answer) from the base model; and the
-same from an off-policy self-distillation warm-up (the same model, told the probe's numbers for the problem as its own prior, sampled;
-chains that land on the numbers without mentioning being told them are kept and the hintless prompt is fine-tuned on them). No
-agreement term in any of these, so the attempts are free to ignore the commitment.</p>
+(up to 1536 tokens in training, 2048 in evaluation). ~98% of base-model chains hit the budget; thinking roughly doubles the base
+model's legitimate pass rate (0.13 -> 0.29) and its test editing (0.09 -> 0.13) -- see the "thinking 4k" cells in section 1. Everything
+below is one seed per run, read from the training logs as of the date above; the runs marked in progress will change. Details and the
+running commentary are in <code>results_part4.md</code>.</p>
+<p>Task-only <code>token_truncate</code> runs drift into answers that run to the token cap and collapse after ~100-140 steps (dashed);
+the truncation mask (TRL's <code>mask_truncated_completions</code>: a completion that did not end with <code>&lt;|im_end|&gt;</code> is
+dropped from the loss) removes it. The decoupled runs are the "prediction / success; batch" recipe of section 1 with thinking on: with
+the Part 3 non-thinking commitment turn and its SFT prior; with a reasoning commitment turn (framing "v1": an assessor system prompt,
+statements before the problem, a 1024-token chain and a 128-token answer) from the base model; and the same from an off-policy
+self-distillation warm-up (the same model, told the probe's numbers for the problem as its own prior, sampled; chains that land on the
+numbers without mentioning being told them are kept and the hintless prompt is fine-tuned on them). No agreement term in any of these,
+so the attempts are free to ignore the commitment.</p>
 {p4_curves}
 <p>The commitment charts: the SFT-prior and distilled runs are calibrated (committed within a few points of observed) and sit at an
 across-problem correlation of 0.3-0.4, the base model's level; the no-warm-up run's commitment overshot (0.9) and then collapsed to
@@ -606,6 +578,9 @@ predicting ~0 acceptance while the attempts kept succeeding -- a stable constant
 the batch is then equally wrong. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation
 above noise (0.21, 95% CI [0.05, 0.36] over steps 26-40), to be confirmed.</p>
 {p4_status}
+
+<h2>5. Example: the commitment conversation and the attempt conversation</h2>
+{section_example()}
 </body></html>"""
     open(OUT, "w").write(html)
     print("wrote", OUT, len(html), "bytes")
