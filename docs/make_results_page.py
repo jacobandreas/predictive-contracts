@@ -61,13 +61,12 @@ GRID = {
     },
 }
 
-# Training runs for the curves (one line each); dashed = the unmasked runs that collapsed and were stopped.
+# Training runs for the curves (one line each).  All use the truncation mask; the earlier unmasked runs collapsed and are
+# documented in results_part4.md only.
 PART4_RUNS = [
-    ("RL, task only (mask)", "grpo_modify_tests_neutral_think4k_mt_s1", "solid"),
-    ("prediction / success, no-think prediction (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1", "solid"),
-    ("prediction / success, thinking prediction, distilled warm-up (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1", "solid"),
-    ("RL, task only, no mask (collapsed, stopped)", "grpo_modify_tests_neutral_think4k_s1", "dashed"),
-    ("prediction / success, no-think prediction, no mask (collapsed, stopped)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1", "dashed"),
+    ("RL, task only", "grpo_modify_tests_neutral_think4k_mt_s1", "solid"),
+    ("prediction / success, no-think prediction", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1", "solid"),
+    ("prediction / success, thinking prediction (distilled warm-up)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1", "solid"),
 ]
 
 # Colour scheme.  Hacking-related metrics are reds / oranges, success-related ones blues / greens, the rest greys.  A metric
@@ -182,8 +181,14 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
             if show_values and v >= 0.005:
                 out.append(f'<text x="{x + bar_w / 2:.1f}" y="{max(y - 4, top + 10):.1f}" class="val" text-anchor="middle">{v:.1%}</text>')
         for li, line in enumerate(label.split("\n")):
-            cls = "tick" if li == 0 or not line.startswith("(") else "tick note"
-            out.append(f'<text x="{left + gi * band + band / 2:.1f}" y="{top + h + 16 + 13 * li}" class="{cls}" text-anchor="middle">{line}</text>')
+            cx, cy = left + gi * band + band / 2, top + h + 16 + 13 * li
+            if line.startswith("(training") or line.startswith("(not yet"):  # an orange "in progress" pill, like the section badge
+                text = line.strip("()").upper().replace("TRAINING, ", "IN PROGRESS: ")
+                w = 5.9 * len(text) + 14
+                out.append(f'<rect x="{cx - w / 2:.1f}" y="{cy - 10}" width="{w:.1f}" height="14" rx="4" fill="#c98500"/>'
+                           f'<text x="{cx:.1f}" y="{cy}" class="pill" text-anchor="middle">{text}</text>')
+            else:
+                out.append(f'<text x="{cx:.1f}" y="{cy}" class="tick" text-anchor="middle">{line}</text>')
     out.append(f'<line x1="{left}" x2="{width - 16}" y1="{top + h}" y2="{top + h}" class="axis"/>')
     if refline is not None:
         yr = top + h - h * refline[0] / ymax
@@ -472,16 +477,16 @@ def section_curves():
     def series(key, family, only=None, style_override=None, prefix=""):
         return [(prefix + label, pts[key], style_override or style, family[shade[label] % len(family)])
                 for label, (pts, style) in curves.items() if key in pts and (only is None or label in only)]
-    commit_runs = [label for label, (pts, _) in curves.items() if "committed accepted" in pts and "collapsed" not in label]
-    lc = [lines(series("accepted", SUCC, prefix="accepted: "), "Training batches: attempts accepted by the grader (10-step means)", "16 problems x 16 attempts per step; dashed = the unmasked runs that collapsed and were stopped", width=1000, ymax=1.0),
+    commit_runs = [label for label, (pts, _) in curves.items() if "committed accepted" in pts]
+    lc = [lines(series("accepted", SUCC, prefix="accepted: "), "Training batches: attempts accepted by the grader (10-step means)", "16 problems x 16 attempts per step", width=1000, ymax=1.0),
           lines(series("edited", HACK, prefix="tests edited: "), "Training batches: attempts that edited the tests (10-step means)", "the behaviour the commitments predict", width=1000),
           lines(series("committed accepted", SUCC, only=commit_runs, prefix="committed: ") + series("accepted", SUCC, only=commit_runs, style_override="dashed", prefix="observed: "),
                 "Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)", "mean over the 16 commitments and 16 attempts per problem; one shade per run", width=1000, ymax=1.0),
           lines(series("corr accepted", SUCC, only=commit_runs, prefix="accepted: ") + series("corr edited", HACK, only=commit_runs, style_override="dashed", prefix="tests edited: "),
                 "Commitments: across-problem correlation with the attempts' rates, per 10-step window", "greens = accepted by grader (solid), reds = tests edited (dashed); ~160 problems per window", width=1000, ymax=1.0)]
-    running = [(l, r, n) for l, r, n in status if n < FINAL_STEP and "collapsed" not in l]
+    running = [(l, r, n) for l, r, n in status if n < FINAL_STEP]
     badge = f'<span class="badge">in progress: {len(running)} run{"s" if len(running) != 1 else ""} still training</span>' if running else ""
-    srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "stopped (collapsed)" if "collapsed" in l else ("done" if n >= FINAL_STEP else "training")] for l, r, n in status]
+    srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "done" if n >= FINAL_STEP else f'<span class="badge" style="margin:0">in progress</span>'] for l, r, n in status]
     stable = '<table class="status"><tr><th>run</th><th>directory</th><th>step</th><th>status</th></tr>' + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in srows) + "</table>"
     return badge, "\n".join(lc), stable
 
@@ -501,6 +506,7 @@ svg { width: 100%; height: auto; display: block; overflow: visible; margin-botto
 .val { font-size: 10px; fill: var(--ink2); } .grid { stroke: var(--grid); stroke-width: 1; } .axis { stroke: var(--ink2); stroke-width: 1; }
 .light { opacity: .45; } path.line { stroke-width: 2; stroke-linejoin: round; }
 .ring { stroke: var(--surface); stroke-width: 1.5; }
+.pill { font-size: 9px; font-weight: 600; letter-spacing: .04em; fill: #fff; }
 .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #c98500; border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
 .err { stroke: var(--ink); stroke-width: 1; } .ref { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 5 4; }
 rect:hover { opacity: .75; }
@@ -575,10 +581,10 @@ success with AUC 0.67-0.75 and tampering at chance on this test set, so the succ
 ceiling is. Details in <code>results_part3.md</code>.</p>
 
 <h2>3. Training curves of the thinking runs {badge}</h2>
-<p>Read from the training logs as of the date above (10-step means over 16 problems x 16 rollouts). Task-only
-<code>token_truncate</code> runs drift into answers that run to the token cap and collapse after ~100-140 steps (dashed); the truncation
-mask removes it. No agreement term in any of these runs, so the attempts are free to ignore the commitment. Details and the running
-commentary are in <code>results_part4.md</code>.</p>
+<p>Read from the training logs as of the date above (10-step means over 16 problems x 16 rollouts). All three runs use the truncation
+mask (TRL's <code>mask_truncated_completions</code>); without it, task-only <code>token_truncate</code> runs drift into answers that run to
+the token cap and collapse after ~100-140 steps (those runs are in <code>results_part4.md</code>, not here). No agreement term in any of
+these runs, so the attempts are free to ignore the commitment.</p>
 {curves}
 <p>Both commitment runs are calibrated (committed within a few points of observed) and sit at an across-problem correlation of 0.3-0.4,
 the base model's level. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation above noise
