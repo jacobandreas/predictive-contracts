@@ -59,18 +59,12 @@ GRID = {
                                       commit=["rl200_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1_pc_modify_tests"],
                                       run="grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1"),
     },
-    "thinking solution,\nthinking prediction\n(no warm-up)": {
-        "prediction /\nsuccess": dict(eval=["rl200_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1_neutral_modify_tests"],
-                                      commit=["rl200_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1_pc_modify_tests"],
-                                      run="grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1"),
-    },
 }
 
 # Training runs for the curves (one line each); dashed = the unmasked runs that collapsed and were stopped.
 PART4_RUNS = [
     ("RL, task only (mask)", "grpo_modify_tests_neutral_think4k_mt_s1", "solid"),
     ("prediction / success, no-think prediction (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1", "solid"),
-    ("prediction / success, thinking prediction, no warm-up (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1", "solid"),
     ("prediction / success, thinking prediction, distilled warm-up (mask)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1", "solid"),
     ("RL, task only, no mask (collapsed, stopped)", "grpo_modify_tests_neutral_think4k_s1", "dashed"),
     ("prediction / success, no-think prediction, no mask (collapsed, stopped)", "grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_s1", "dashed"),
@@ -512,7 +506,7 @@ and the attempt is rewarded on <em>success</em> (the task reward alone), on <em>
 mean commitment), or on <em>prediction</em> alone (agreement only); all from a commitment-turn SFT warm start. <b>Rows</b> are thinking
 configurations: thinking off (3 seeds per cell); the solution thinking under Qwen3's 4096-token budget with the Part 3 non-thinking
 commitment turn; and both the solution and the commitment thinking (1024-token commitment chain, framing "v1"), from an off-policy
-self-distillation warm-up or from the base model. The thinking rows are one training seed each and were trained with the truncation
+self-distillation warm-up. The thinking rows are one training seed each and were trained with the truncation
 mask (TRL's <code>mask_truncated_completions</code>); cells still training are drawn as empty slots with their step. Every trained cell
 used the per-token <code>token_truncate</code> importance-sampling correction. Hover a bar for exact values; each chart has a table.</p>
 
@@ -561,11 +555,10 @@ ceiling is. Details in <code>results_part3.md</code>.</p>
 mask removes it. No agreement term in any of these runs, so the attempts are free to ignore the commitment. Details and the running
 commentary are in <code>results_part4.md</code>.</p>
 {curves}
-<p>The SFT-prior and distilled runs' commitments are calibrated (committed within a few points of observed) and sit at an across-problem
-correlation of 0.3-0.4, the base model's level; the no-warm-up run's commitment overshot (0.9) and then collapsed to predicting ~0
-acceptance while the attempts kept succeeding -- a stable constant under batch normalisation, since every commitment in the batch is
-then equally wrong. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation above noise
-(0.21, 95% CI [0.05, 0.36] over steps 26-40), to be confirmed.</p>
+<p>Both commitment runs are calibrated (committed within a few points of observed) and sit at an across-problem correlation of 0.3-0.4,
+the base model's level. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation above noise
+(0.21, 95% CI [0.05, 0.36] over steps 26-40), to be confirmed. (A third variant with reasoning commitments and no warm-up collapsed to
+predicting ~0 acceptance by step 75 and was dropped; see <code>results_part4.md</code>.)</p>
 {status}
 
 <h2>4. Alignment MCQ</h2>

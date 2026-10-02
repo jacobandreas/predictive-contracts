@@ -223,13 +223,13 @@ commitments think.
 ## Where things stand (2026-10-02)
 
 Training on the cluster, all Part 4, one seed each, thinking on with the 4k budget and the truncation mask
-(`runs/<name>`; logs mirrored under `results/runs/`):
+(`runs/<name>`; logs mirrored under `results/runs/`). A reasoning-commitment run with no warm-up
+(`..._cthinkv1_think4k_mt_s1`) collapsed to predicting ~0 acceptance by step 75 and was dropped on 2026-10-02:
 
 | run | what | step |
 |---|---|---|
 | `grpo_modify_tests_neutral_think4k_mt_s1` | plain RL, task reward only | 193/200; step-200 test eval queued |
 | `grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_think4k_mt_s1` | prediction / success; batch, non-thinking commitments, SFT prior | 110 |
-| `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1` | same with reasoning commitments (v1), no warm-up | 99; commitments collapsed to ~0 |
 | `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1` | same, from the distilled warm start | 40 (slow) |
 
 Results and the running commentary are in `results_part4.md`; the page (`results.html`) carries the
