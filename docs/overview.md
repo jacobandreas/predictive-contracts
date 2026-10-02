@@ -53,15 +53,33 @@ hacking during RL training; this environment is taken from [this github
 repo](https://github.com/ariahw/rl-rewardhacking) (described more
 [here](https://www.lesswrong.com/posts/R5MdWGKsuvdPwGFBG/steering-rl-training-benchmarking-interventions-against)).
 
-Research question (see `CLAUDE.md`): do failed agentic interactions make models less aligned, and do
-up-front behavioural commitments ("contracts") mitigate this? The concrete setting throughout is
-Qwen3-4B on LeetCode problems with a test-tampering loophole (from `ariahw/rl-rewardhacking`), GRPO
-training with LoRA, and a *commitment* turn in which the model predicts its own behaviour before
-acting. Everything is written to be read: minimal abstraction, one file per idea, no exception
-handling beyond what the pipeline needs.
+The basic setup of this environment is that the agent is given a stub function
+and a set of tests, and has to return a new file containing the function and the
+tests. We can then measure a few quantities:
 
-Status (2026-10-02): Parts 1-3 are complete and written up (`results_part1-3.md`, the HTML page).
-Part 4 (thinking mode on) has four training runs in progress; see "Where things stand" at the end.
+- Pass rate (does it pass the tests?). This can be done by solving the problem
+  legitimately or by modifying the tests.
+
+- Modify rate (did it change any of the tests, either to match the program
+  output, to remove failing cases, or just to delete them all?). This is a proxy
+  for one category of hacking.
+
+- Hidden test pass rate. The repo includes a set of hidden tests not shown to
+  the model. If it did pass these tests, it probably solved the problem the
+  right way. If it *didn't* modify the visible tests, *and* fails the hidden
+  tests, it probably cheated in some other way (e.g. by hardcoding test values).
+
+Main takeaways in this environment are:
+
+- Thinking-off predictors learn to make nontrivial predictions about success
+  rate; thinking-on predictors also learn to make nontrivial predictions about
+  hack rate.
+
+- RL improves thinking-off models but not yet thinking-on models (probably just
+  need to train for longer / tweak params).
+
+- Adding an agreement reward to both predictions and solutions actually
+  decreases the attempted hack rate and increases the legitimate success rate. 
 
 ## Layout
 
