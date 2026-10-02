@@ -259,6 +259,15 @@ froze the constant commitments in Part 3; without the agreement term the attempt
 down, so this is "dishonest pessimism" rather than the Part 3 honest-failure equilibrium). Left running as the
 control it is.
 
+**2026-10-02 check.** Neutral mask run at step 193, still flat (steps 151-193: success 0.69-0.72, Correct
+0.55-0.58, hack label 0.13, 16.2-16.4k characters, forced 0.84-0.87): with the truncation mask the task-only
+thinking run completes 200 steps without the blow-up. Step-200 evaluation queued (same protocol as the step-50 one).
+No-think SFT-prior run at 110: calibrated, acceptance correlation 0.31-0.40, tampering commitment constant at 0.10.
+Thinking v1 no-warm-up at 99: committed acceptance now 0.00 against 0.68 observed, the collapse complete. Thinking v1
+distilled at 40 (slow, ~37 min/step): acceptance 0.70 vs 0.69, correlation 0.40; tampering 0.14 vs 0.13 with
+correlation 0.21 in the latest window, the first tampering correlation above noise in any run (one window, 240
+problems; to be confirmed).
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
