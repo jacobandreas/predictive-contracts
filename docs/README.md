@@ -113,7 +113,7 @@ scripts/
   train.sbatch          SLURM job: training (builds venv_train with trl[vllm] on first use)
   sync.sh               push code + data to the cluster; pull results back
 docs/
-  overview.md (this), results_part{1,2,3,4}.md, commitment_game.md, probe_summaries/,
+  README.md (this), results_part{1,2,3,4}.md, commitment_game.md, probe_summaries/,
   make_results_page.py -> results.html (the charts page)
 data/
   leetcode/leetcode_test_medhard.jsonl            119 medium/hard LeetCode problems (eval split)

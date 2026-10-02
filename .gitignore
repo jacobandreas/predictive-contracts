@@ -8,7 +8,7 @@ venv_train/
 # macOS
 .DS_Store
 
-# Datasets copied from HF / GitHub (35 MB; regenerate per docs/overview.md)
+# Datasets copied from HF / GitHub (35 MB; regenerate per docs/README.md)
 data/
 
 # Experiment outputs pulled from the cluster (GBs of transcripts, rollout logs, adapters, embeddings).

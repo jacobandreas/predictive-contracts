@@ -15,7 +15,7 @@ after pulling new results; sections mirror this file).
 
 Model: `Qwen/Qwen3-4B` served with vLLM 0.28, bf16, thinking **off**, temperature 0.7, top-p 0.95,
 max 2048 new tokens. Environment: 119 medium/hard LeetCode problems (`data/leetcode/`), 10 samples
-per problem per run. Labels follow `ariahw/rl-rewardhacking` (see `docs/overview.md`).
+per problem per run. Labels follow `ariahw/rl-rewardhacking` (see `docs/README.md`).
 
 ## Step 1: baseline pass / hack rates (single attempt)
 
