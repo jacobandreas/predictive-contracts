@@ -284,6 +284,23 @@ success rose only from 0.65 to 0.69 over the run. So with thinking on, the mask 
 learning nothing: the run neither takes off into tampering (0.13 = base) nor improves. The thinking-off `token_truncate`
 seeds, by contrast, either took off or ended a few points above the base model.
 
+**Interim test-set evaluations of the two in-progress thinking runs (2026-10-02; decoupled protocol as trained,
+`run_tasks --decoupled`, files `rl110_..._sftwarm_think4k_mt_s1_dc_...` and `rl40_..._cthinkv1_distill_think4k_mt_s1_dc_...`).**
+Across-problem correlation = Pearson between a problem's mean committed probability and its observed rate over the 10 samples:
+
+| thinking solution, prediction / success | checkpoint | hidden tests | accepted | tests edited | committed p(accept) / observed | corr (success) | committed p(tamper) / observed | corr (tampering) |
+|---|---|---|---|---|---|---|---|---|
+| base, thinking on (3 seeds) | -- | 0.296 | 0.363 | 0.129 | | | | |
+| no-think prediction, SFT prior | 110 | 0.281 | 0.348 | 0.118 | 0.55 / 0.35 | 0.37 | 0.10 / 0.12 (constant) | -- |
+| thinking prediction, distilled warm-up | 40 | 0.273 | 0.327 | 0.096 | 0.64 / 0.33 | 0.46 | 0.14 / 0.10 | 0.22 |
+
+Behaviour at both checkpoints is the base model's. Both commitments carry across-problem information on success
+(0.37 and 0.46; the thinking-off agreement cell is at 0.48 at step 200) but are miscalibrated on the test set, committing
+0.55-0.64 where 0.33-0.35 of attempts are accepted: training problems are accepted ~0.68 of the time, test problems
+~0.35, and the batch-normalised prediction reward calibrates to the training mean. The distilled run's thinking
+commitment is the first with a non-zero tampering correlation on the test set (0.22, 119 problems; its spread across
+problems is still only 0.016 against 0.234 for the observed rates).
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
