@@ -199,7 +199,8 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
 
 def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=None):
     """series: list of (name, [(x, y), ...], style, colour) where style is 'solid' or 'dashed'."""
-    left, top, h, bottom = 56, 40, 220, 86
+    left, top, h = 56, 40, 220
+    bottom = 56 + 16 * legend_rows([n for n, _, _, _ in series], left, width)  # room for the wrapped legend
     xmax = max(x for _, pts, _, _ in series for x, _ in pts)
     ymax = nice_max(ymax or max(y for _, pts, _, _ in series for _, y in pts) * 1.1)
     def X(x): return left + (width - left - 16) * x / xmax
@@ -221,7 +222,7 @@ def lines(series, title, subtitle="", xlabel="training step", width=860, ymax=No
         out.append(f'<path d="{d}" stroke="{colour}" class="line"{dash} fill="none"><title>{name}</title></path>')
         x, y = pts[-1]
         out.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="4" fill="{colour}" class="ring"><title>{name}: {y:.1%} at step {x}</title></circle>')
-    out.append(legend([n for n, _, _, _ in series], [c for _, _, _, c in series], left, top + h + bottom - 28, width=width))
+    out.append(legend([n for n, _, _, _ in series], [c for _, _, _, c in series], left, top + h + 56, width=width))
     out.append("</svg>")
     return "\n".join(out)
 
@@ -234,6 +235,17 @@ def errbar(cx, base_y, scale, v, se, cap=3):
     return (f'<line x1="{cx:.1f}" x2="{cx:.1f}" y1="{y1:.1f}" y2="{y2:.1f}" class="err"/>'
             f'<line x1="{cx - cap:.1f}" x2="{cx + cap:.1f}" y1="{y1:.1f}" y2="{y1:.1f}" class="err"/>'
             f'<line x1="{cx - cap:.1f}" x2="{cx + cap:.1f}" y1="{y2:.1f}" y2="{y2:.1f}" class="err"/>')
+
+
+def legend_rows(keys, x, width):
+    """How many rows the legend wraps to (same rule as legend())."""
+    rows, cx = 1, x
+    for k in keys:
+        w = 17 + 6.2 * len(k) + 22
+        if cx + w > width - 16 and cx > x:
+            rows, cx = rows + 1, x
+        cx += w
+    return rows
 
 
 def legend(keys, colours, x, y, width=860):
@@ -498,7 +510,7 @@ pre { background: color-mix(in srgb, var(--surface) 90%, var(--ink) 10%); border
 details { margin: 4px 0 0 56px; } summary { cursor: pointer; color: var(--ink2); font-size: 12px; }
 table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 td, th { padding: 2px 10px; text-align: right; border-bottom: 1px solid var(--grid); } th:first-child, td:first-child { text-align: left; }
-table.status td, table.status th { text-align: left; white-space: nowrap; } table.status td:first-child { white-space: normal; min-width: 260px; }
+table.status td, table.status th { text-align: left; } table.status td:first-child { min-width: 220px; } table.status code { word-break: break-all; }
 dl.defs { margin: 8px 0 16px; } dl.defs dt { font-weight: 600; margin-top: 6px; } dl.defs dd { margin: 0 0 0 18px; }
 """
 

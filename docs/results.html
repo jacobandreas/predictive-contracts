@@ -20,7 +20,7 @@ pre { background: color-mix(in srgb, var(--surface) 90%, var(--ink) 10%); border
 details { margin: 4px 0 0 56px; } summary { cursor: pointer; color: var(--ink2); font-size: 12px; }
 table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 td, th { padding: 2px 10px; text-align: right; border-bottom: 1px solid var(--grid); } th:first-child, td:first-child { text-align: left; }
-table.status td, table.status th { text-align: left; white-space: nowrap; } table.status td:first-child { white-space: normal; min-width: 260px; }
+table.status td, table.status th { text-align: left; } table.status td:first-child { min-width: 220px; } table.status code { word-break: break-all; }
 dl.defs { margin: 8px 0 16px; } dl.defs dt { font-weight: 600; margin-top: 6px; } dl.defs dd { margin: 0 0 0 18px; }
 </style></head><body>
 <h1>Results: behaviour, prediction and alignment by model (modify_tests prompt)</h1>
@@ -619,7 +619,7 @@ ceiling is. Details in <code>results_part3.md</code>.</p>
 <code>token_truncate</code> runs drift into answers that run to the token cap and collapse after ~100-140 steps (dashed); the truncation
 mask removes it. No agreement term in any of these runs, so the attempts are free to ignore the commitment. Details and the running
 commentary are in <code>results_part4.md</code>.</p>
-<svg viewBox="0 0 1000 346" role="img" aria-label="Training batches: attempts accepted by the grader (10-step means)">
+<svg viewBox="0 0 1000 364" role="img" aria-label="Training batches: attempts accepted by the grader (10-step means)">
 <text x="56" y="20" class="title">Training batches: attempts accepted by the grader (10-step means)</text>
 <text x="56" y="34" class="sub">16 problems x 16 attempts per step; dashed = the unmasked runs that collapsed and were stopped</text>
 <line x1="56" x2="984" y1="260.0" y2="260.0" class="grid"/>
@@ -650,18 +650,18 @@ commentary are in <code>results_part4.md</code>.</p>
 <circle cx="891.7" cy="220.5" r="4" fill="#1f4fb8" class="ring"><title>accepted: RL, task only, no mask (collapsed, stopped): 18.0% at step 181.0</title></circle>
 <path d="M81.4,113.0 L127.6,123.7 L173.7,116.7 L219.9,104.2 L266.1,110.0 L312.2,106.4 L358.4,111.1 L404.6,110.2 L450.7,102.2 L496.9,102.0 L543.1,151.7 L589.3,256.2 L635.4,243.3 L681.6,190.1 L727.8,156.7 L753.2,99.3" stroke="#6cb33f" class="line" stroke-dasharray="6 4" fill="none"><title>accepted: prediction / success, no-think prediction, no mask (collapsed, stopped)</title></path>
 <circle cx="753.2" cy="99.3" r="4" fill="#6cb33f" class="ring"><title>accepted: prediction / success, no-think prediction, no mask (collapsed, stopped): 73.0% at step 151.0</title></circle>
-<rect x="56" y="309" width="12" height="12" rx="2" fill="#2a78d6"/>
-<text x="73" y="319" class="tick">accepted: RL, task only (mask)</text>
-<rect x="281.0" y="309" width="12" height="12" rx="2" fill="#1baf7a"/>
-<text x="298.0" y="319" class="tick">accepted: prediction / success, no-think prediction (mask)</text>
-<rect x="56" y="325" width="12" height="12" rx="2" fill="#1b9aaa"/>
-<text x="73" y="335" class="tick">accepted: prediction / success, thinking prediction, distilled warm-up (mask)</text>
-<rect x="572.4000000000001" y="325" width="12" height="12" rx="2" fill="#1f4fb8"/>
-<text x="589.4000000000001" y="335" class="tick">accepted: RL, task only, no mask (collapsed, stopped)</text>
-<rect x="56" y="341" width="12" height="12" rx="2" fill="#6cb33f"/>
-<text x="73" y="351" class="tick">accepted: prediction / success, no-think prediction, no mask (collapsed, stopped)</text>
+<rect x="56" y="307" width="12" height="12" rx="2" fill="#2a78d6"/>
+<text x="73" y="317" class="tick">accepted: RL, task only (mask)</text>
+<rect x="281.0" y="307" width="12" height="12" rx="2" fill="#1baf7a"/>
+<text x="298.0" y="317" class="tick">accepted: prediction / success, no-think prediction (mask)</text>
+<rect x="56" y="323" width="12" height="12" rx="2" fill="#1b9aaa"/>
+<text x="73" y="333" class="tick">accepted: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="572.4000000000001" y="323" width="12" height="12" rx="2" fill="#1f4fb8"/>
+<text x="589.4000000000001" y="333" class="tick">accepted: RL, task only, no mask (collapsed, stopped)</text>
+<rect x="56" y="339" width="12" height="12" rx="2" fill="#6cb33f"/>
+<text x="73" y="349" class="tick">accepted: prediction / success, no-think prediction, no mask (collapsed, stopped)</text>
 </svg>
-<svg viewBox="0 0 1000 346" role="img" aria-label="Training batches: attempts that edited the tests (10-step means)">
+<svg viewBox="0 0 1000 380" role="img" aria-label="Training batches: attempts that edited the tests (10-step means)">
 <text x="56" y="20" class="title">Training batches: attempts that edited the tests (10-step means)</text>
 <text x="56" y="34" class="sub">the behaviour the commitments predict</text>
 <line x1="56" x2="984" y1="260.0" y2="260.0" class="grid"/>
@@ -692,18 +692,18 @@ commentary are in <code>results_part4.md</code>.</p>
 <circle cx="891.7" cy="184.4" r="4" fill="#c98500" class="ring"><title>tests edited: RL, task only, no mask (collapsed, stopped): 8.6% at step 181.0</title></circle>
 <path d="M81.4,175.1 L127.6,152.1 L173.7,152.1 L219.9,144.2 L266.1,185.4 L312.2,127.3 L358.4,111.2 L404.6,99.1 L450.7,101.2 L496.9,108.4 L543.1,190.6 L589.3,256.9 L635.4,247.3 L681.6,206.7 L727.8,182.0 L753.2,177.5" stroke="#8a3d1f" class="line" stroke-dasharray="6 4" fill="none"><title>tests edited: prediction / success, no-think prediction, no mask (collapsed, stopped)</title></path>
 <circle cx="753.2" cy="177.5" r="4" fill="#8a3d1f" class="ring"><title>tests edited: prediction / success, no-think prediction, no mask (collapsed, stopped): 9.4% at step 151.0</title></circle>
-<rect x="56" y="309" width="12" height="12" rx="2" fill="#b3261e"/>
-<text x="73" y="319" class="tick">tests edited: RL, task only (mask)</text>
-<rect x="305.8" y="309" width="12" height="12" rx="2" fill="#e2552a"/>
-<text x="322.8" y="319" class="tick">tests edited: prediction / success, no-think prediction (mask)</text>
-<rect x="56" y="325" width="12" height="12" rx="2" fill="#f0892f"/>
-<text x="73" y="335" class="tick">tests edited: prediction / success, thinking prediction, distilled warm-up (mask)</text>
-<rect x="56" y="341" width="12" height="12" rx="2" fill="#c98500"/>
-<text x="73" y="351" class="tick">tests edited: RL, task only, no mask (collapsed, stopped)</text>
-<rect x="56" y="357" width="12" height="12" rx="2" fill="#8a3d1f"/>
-<text x="73" y="367" class="tick">tests edited: prediction / success, no-think prediction, no mask (collapsed, stopped)</text>
+<rect x="56" y="307" width="12" height="12" rx="2" fill="#b3261e"/>
+<text x="73" y="317" class="tick">tests edited: RL, task only (mask)</text>
+<rect x="305.8" y="307" width="12" height="12" rx="2" fill="#e2552a"/>
+<text x="322.8" y="317" class="tick">tests edited: prediction / success, no-think prediction (mask)</text>
+<rect x="56" y="323" width="12" height="12" rx="2" fill="#f0892f"/>
+<text x="73" y="333" class="tick">tests edited: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="56" y="339" width="12" height="12" rx="2" fill="#c98500"/>
+<text x="73" y="349" class="tick">tests edited: RL, task only, no mask (collapsed, stopped)</text>
+<rect x="56" y="355" width="12" height="12" rx="2" fill="#8a3d1f"/>
+<text x="73" y="365" class="tick">tests edited: prediction / success, no-think prediction, no mask (collapsed, stopped)</text>
 </svg>
-<svg viewBox="0 0 1000 346" role="img" aria-label="Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)">
+<svg viewBox="0 0 1000 348" role="img" aria-label="Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)">
 <text x="56" y="20" class="title">Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)</text>
 <text x="56" y="34" class="sub">mean over the 16 commitments and 16 attempts per problem; one shade per run</text>
 <line x1="56" x2="984" y1="260.0" y2="260.0" class="grid"/>
@@ -730,16 +730,16 @@ commentary are in <code>results_part4.md</code>.</p>
 <circle cx="984.0" cy="108.2" r="4" fill="#1baf7a" class="ring"><title>observed: prediction / success, no-think prediction (mask): 69.0% at step 113.0</title></circle>
 <path d="M101.2,109.0 L183.3,122.7 L265.4,116.3 L347.5,108.9 L409.1,110.0" stroke="#1b9aaa" class="line" stroke-dasharray="6 4" fill="none"><title>observed: prediction / success, thinking prediction, distilled warm-up (mask)</title></path>
 <circle cx="409.1" cy="110.0" r="4" fill="#1b9aaa" class="ring"><title>observed: prediction / success, thinking prediction, distilled warm-up (mask): 68.2% at step 43.0</title></circle>
-<rect x="56" y="309" width="12" height="12" rx="2" fill="#1baf7a"/>
-<text x="73" y="319" class="tick">committed: prediction / success, no-think prediction (mask)</text>
-<rect x="460.8" y="309" width="12" height="12" rx="2" fill="#1b9aaa"/>
-<text x="477.8" y="319" class="tick">committed: prediction / success, thinking prediction, distilled warm-up (mask)</text>
-<rect x="56" y="325" width="12" height="12" rx="2" fill="#1baf7a"/>
-<text x="73" y="335" class="tick">observed: prediction / success, no-think prediction (mask)</text>
-<rect x="454.6" y="325" width="12" height="12" rx="2" fill="#1b9aaa"/>
-<text x="471.6" y="335" class="tick">observed: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="56" y="307" width="12" height="12" rx="2" fill="#1baf7a"/>
+<text x="73" y="317" class="tick">committed: prediction / success, no-think prediction (mask)</text>
+<rect x="460.8" y="307" width="12" height="12" rx="2" fill="#1b9aaa"/>
+<text x="477.8" y="317" class="tick">committed: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="56" y="323" width="12" height="12" rx="2" fill="#1baf7a"/>
+<text x="73" y="333" class="tick">observed: prediction / success, no-think prediction (mask)</text>
+<rect x="454.6" y="323" width="12" height="12" rx="2" fill="#1b9aaa"/>
+<text x="471.6" y="333" class="tick">observed: prediction / success, thinking prediction, distilled warm-up (mask)</text>
 </svg>
-<svg viewBox="0 0 1000 346" role="img" aria-label="Commitments: across-problem correlation with the attempts' rates, per 10-step window">
+<svg viewBox="0 0 1000 364" role="img" aria-label="Commitments: across-problem correlation with the attempts' rates, per 10-step window">
 <text x="56" y="20" class="title">Commitments: across-problem correlation with the attempts' rates, per 10-step window</text>
 <text x="56" y="34" class="sub">greens = accepted by grader (solid), reds = tests edited (dashed); ~160 problems per window</text>
 <line x1="56" x2="984" y1="260.0" y2="260.0" class="grid"/>
@@ -766,14 +766,14 @@ commentary are in <code>results_part4.md</code>.</p>
 <circle cx="984.0" cy="260.0" r="4" fill="#e2552a" class="ring"><title>tests edited: prediction / success, no-think prediction (mask): 0.0% at step 113.0</title></circle>
 <path d="M101.2,250.4 L183.3,254.7 L265.4,219.6 L347.5,230.8 L409.1,260.0" stroke="#f0892f" class="line" stroke-dasharray="6 4" fill="none"><title>tests edited: prediction / success, thinking prediction, distilled warm-up (mask)</title></path>
 <circle cx="409.1" cy="260.0" r="4" fill="#f0892f" class="ring"><title>tests edited: prediction / success, thinking prediction, distilled warm-up (mask): 0.0% at step 43.0</title></circle>
-<rect x="56" y="309" width="12" height="12" rx="2" fill="#1baf7a"/>
-<text x="73" y="319" class="tick">accepted: prediction / success, no-think prediction (mask)</text>
-<rect x="454.6" y="309" width="12" height="12" rx="2" fill="#1b9aaa"/>
-<text x="471.6" y="319" class="tick">accepted: prediction / success, thinking prediction, distilled warm-up (mask)</text>
-<rect x="56" y="325" width="12" height="12" rx="2" fill="#e2552a"/>
-<text x="73" y="335" class="tick">tests edited: prediction / success, no-think prediction (mask)</text>
-<rect x="56" y="341" width="12" height="12" rx="2" fill="#f0892f"/>
-<text x="73" y="351" class="tick">tests edited: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="56" y="307" width="12" height="12" rx="2" fill="#1baf7a"/>
+<text x="73" y="317" class="tick">accepted: prediction / success, no-think prediction (mask)</text>
+<rect x="454.6" y="307" width="12" height="12" rx="2" fill="#1b9aaa"/>
+<text x="471.6" y="317" class="tick">accepted: prediction / success, thinking prediction, distilled warm-up (mask)</text>
+<rect x="56" y="323" width="12" height="12" rx="2" fill="#e2552a"/>
+<text x="73" y="333" class="tick">tests edited: prediction / success, no-think prediction (mask)</text>
+<rect x="56" y="339" width="12" height="12" rx="2" fill="#f0892f"/>
+<text x="73" y="349" class="tick">tests edited: prediction / success, thinking prediction, distilled warm-up (mask)</text>
 </svg>
 <p>Both commitment runs are calibrated (committed within a few points of observed) and sit at an across-problem correlation of 0.3-0.4,
 the base model's level. The tampering commitment is near-constant everywhere; the distilled run shows the first correlation above noise
