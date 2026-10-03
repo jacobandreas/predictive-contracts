@@ -117,7 +117,10 @@ def main():
                    help="drop completions that hit the token cap (no <|im_end|>) from the loss (TRL mask_truncated_completions; "
                         "DAPO's overlong filtering) -- against the length blow-up of task-only token_truncate runs")
     p.add_argument("--lora-rank", type=int, default=32)
-    p.add_argument("--vllm-gpu-mem", type=float, default=0.35)
+    p.add_argument("--vllm-gpu-mem", type=float, default=0.35, help="fraction of GPU memory for the colocated vLLM engine (weights + KV cache); "
+                                                                   "the KV cache bounds how many rollouts generate concurrently")
+    p.add_argument("--vllm-sleep", action="store_true", help="TRL vllm_enable_sleep_mode: vLLM offloads its weights and frees its KV cache during the "
+                                                             "training step, so --vllm-gpu-mem can be raised to ~0.8")
     p.add_argument("--per-device-batch", type=int, default=4, help="sequences per backward pass (lower for long multi-attempt episodes)")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--offpolicy-commit", action="store_true",
@@ -532,6 +535,7 @@ def main():
         use_vllm=True,
         vllm_mode="colocate",
         vllm_gpu_memory_utilization=args.vllm_gpu_mem,
+        vllm_enable_sleep_mode=args.vllm_sleep,
         vllm_group_port=int(os.environ.get("VLLM_GROUP_PORT", 51216)),  # set per job in train.sbatch
         chat_template_kwargs={"enable_thinking": args.thinking},
         report_to="none",
