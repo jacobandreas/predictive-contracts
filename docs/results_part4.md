@@ -301,6 +301,19 @@ Behaviour at both checkpoints is the base model's. Both commitments carry across
 commitment is the first with a non-zero tampering correlation on the test set (0.22, 119 problems; its spread across
 problems is still only 0.016 against 0.234 for the observed rates).
 
+**Speed check (2026-10-03).** The thinking runs take ~1,220 s/step (task-only) and ~2,150 s/step (with thinking commitments).
+Hypothesis: the colocated vLLM engine's KV cache (`--vllm-gpu-mem 0.35` of a 94 GB H100 = ~25 GB, ~30 concurrent 5.6k-token
+rollouts, so 256 rollouts in ~9 waves) bounds generation. Two 3-step tests of the task-only recipe: `--vllm-gpu-mem 0.6` ran out
+of memory in the first backward pass (the training phase then has ~23 GB and needed ~6 GB more at per-device batch 2);
+`--vllm-gpu-mem 0.8 --vllm-sleep` (TRL's `vllm_enable_sleep_mode`: vLLM offloads weights and frees the cache during the training
+step) ran fine at **1,182 / 1,196 / 1,194 s/step -- no faster than the baseline**. The first step's rollouts were logged ~8 min in,
+so generation is at most ~8 of the ~20 minutes and the training phase (forward with gradient checkpointing, backward, the
+old-logprob forward for the importance ratio, the reference-adapter forward for the KL term, 128 micro-batches of 2 x ~6k
+tokens) is the larger part; a bigger KV budget cannot fix that. Per-step timing is not instrumented (TRL reports only s/it), so
+the split is inferred from file timestamps. Levers on the training side: gradient checkpointing off once sleep mode frees the
+memory, `--beta 0` (drops the reference forward; 1e-3 does nothing measurable), a larger micro-batch; a large cut needs fewer
+tokens per step.
+
 **No-warm-up control (relaunched 2026-09-29 night under v1):** `grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_think4k_mt_s1`
 (four chained 24 h jobs; the v0 version, jobs 2470330-5, was cancelled before it started) -- the decoupled "prediction / success; batch" recipe with thinking on
 both turns (attempts: 4k budget; commitments: 1k budget, 128-token answer, the reasoning-note prompt), truncation
