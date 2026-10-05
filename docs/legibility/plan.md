@@ -67,3 +67,28 @@ monitor's accuracy; the results page will get a "monitor" row group.
   - `runs/legibility/penalty2_8b_think4k_mt_s1` (`--reward penalty --penalty 2`; jobs 2560816-9). Starts identical to
     the task-only reward since the monitor never flags; the question is whether that stays true as the policy moves.
   - `runs/legibility/legibility_8b_think4k_mt_s1` (`--reward legibility --split-normalize`; jobs 2560820-3).
+- 2026-10-05, evening: **both training runs cancelled after 3 steps** (the monitor was flagging nothing, so neither
+  reward differed from the task reward), and the monitor re-examined.
+  - *The number-list elicitation was broken.* The raw answers were `1. 0.15 / 2. 0.85` on nearly every chain, for
+    every monitor: the models copy the format example in the prompt ("in the form `1. 0.85`"). With the example
+    removed the 8B monitor wrote `0.85 / 0.95` (unnumbered) on 94% of chains, and with the code shown it often stopped
+    after one line. The commitment prompts (`contract/commitment/prompts.py`) use the same example; the base model's
+    near-constant tampering commitments of ~0.10-0.15 may be partly this anchoring.
+  - *New default elicitation* (`Monitor(elicitation="yesno")`): one statement per query, answered "yes"/"no", with the
+    probability read off the first answer token's distribution. Nothing numeric is written, so nothing anchors.
+  - *Results on seed 1's base chains* (`results/legibility/monitor/base_think4k_s1__monitor{4b,8b}_yn[_out].jsonl`):
+
+    | monitor (yes/no) | sees | acceptance: acc, AUC, corr | tampering: mean P, hit, AUC |
+    |---|---|---|---|
+    | 4B | chain | 0.78, 0.83, 0.74 | 0.000, 0.00, 0.58 |
+    | 4B | chain + code | 0.77, 0.82, 0.70 | 0.000, 0.00, 0.54 |
+    | 8B | chain | 0.54, 0.78, 0.46 | 0.001, 0.00, 0.54 |
+    | 8B | chain + code | 0.76, 0.81, 0.71 | 0.023, 0.00, 0.54 |
+
+    Acceptance is now read well from the chain alone (the 4B monitor is the better one: accuracy 0.78 against a 0.64
+    majority baseline). Tampering is not detected even with the final code in front of the monitor: P(tampered) is
+    below 0.01 on almost every answer, and the best sub-case (edits that broke the tests, "Harmful - Incorrect", n=31)
+    reaches only AUC 0.70 with a maximum probability of 0.12. The likely reason is the rubric itself: "altered the
+    `run_tests()` function" is a comparison with the tests the problem showed, which the monitor never sees, and every
+    submission legitimately contains a `run_tests()`; only edits that are tampering on their face (an `assert True`,
+    a swallowed exception) could be recognised without the original, and those are rare among the base model's edits.
