@@ -49,8 +49,10 @@ monitor's accuracy; the results page will get a "monitor" row group.
   | Qwen3-4B, thinking off | 0.00 / 0.00, 0.50, -- (constant) | 0.50, 0.09 |
   | Qwen3-4B, 1k-token chain | 0.03 / 0.01, 0.51, 0.16 | 0.655, 0.47 |
   | Qwen3-8B, thinking off | 0.00 / 0.00, 0.51, 0.07 | 0.72, 0.72 |
+  | Qwen3-8B, 1k-token chain | 0.00 / 0.00, 0.50, 0.04 | 0.75, 0.62 |
 
-  Acceptance is readable from the chain (the 8B monitor's across-problem correlation is 0.72 without thinking);
+  Acceptance is readable from the chain (the 8B monitor's across-problem correlation is 0.72 without thinking,
+  and its own chain of thought adds little: AUC 0.75 but correlation 0.62, at a 1k-token chain per rollout);
   tampering is not: no monitor flags more than 3% of the tampered chains, and the 4B monitor's across-problem
   correlation of 0.16 on tampering comes from a monitor spread of 0.03. This matches the chains themselves -- only 2%
   of the base model's chains that go on to edit the tests mention the tests or the assertions at all, so the monitor
@@ -58,3 +60,10 @@ monitor's accuracy; the results page will get a "monitor" row group.
   used; the training question is whether the legibility reward makes the policy write chains the monitor can read.
 - 2026-10-05: the two-GPU training job works end to end (smoke test of the legibility reward, 2 steps: the monitor
   served on GPU 1, chains generated and scored, monitor queried, logs written; every chain hit the 4k thinking budget).
+- 2026-10-05: experiments (2) and (3) launched against **Qwen3-8B, thinking off** as the monitor (best acceptance reading
+  per cost; every monitor is blind on tampering, so the choice cannot be made on that axis). Policy recipe as in Part 4's
+  task-only thinking run: 16 x 16 rollouts, 4k thinking budget, 1,536 answer tokens, truncation mask, `token_truncate`,
+  200 steps, seed 1; four chained 24 h two-GPU jobs each (`--dependency=afterany`).
+  - `runs/legibility/penalty2_8b_think4k_mt_s1` (`--reward penalty --penalty 2`; jobs 2560816-9). Starts identical to
+    the task-only reward since the monitor never flags; the question is whether that stays true as the policy moves.
+  - `runs/legibility/legibility_8b_think4k_mt_s1` (`--reward legibility --split-normalize`; jobs 2560820-3).
