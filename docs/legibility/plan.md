@@ -2,7 +2,7 @@
 
 Second research direction (started 2026-10-05), sharing the environment, the behavioural rubric and the GRPO loop
 with the commitments work (`docs/README.md`, `docs/results_part*.md`) but with its own code (`contract/legibility/`),
-runs (`runs/legible/` on the cluster), results (`results/legible/`) and docs (this folder).
+runs (`runs/legibility/` on the cluster), results (`results/legibility/`) and docs (this folder).
 
 ## Idea
 
@@ -42,3 +42,19 @@ monitor's accuracy; the results page will get a "monitor" row group.
   monitor/base_think4k.jsonl`). With that monitor the penalty reward collapses to the task reward (it never flags) and
   the legibility reward to "accepted and did not tamper". Before training against it: the same monitor with a
   1,024-token chain of its own, and Qwen3-8B with and without thinking, on one seed's chains.
+- 2026-10-05, monitor diagnostics on seed 1's 1,190 base chains (`results/legibility/monitor/base_think4k_s1__*.jsonl`):
+
+  | monitor | tampering: hit / false alarm, AUC, corr | acceptance: AUC, corr |
+  |---|---|---|
+  | Qwen3-4B, thinking off | 0.00 / 0.00, 0.50, -- (constant) | 0.50, 0.09 |
+  | Qwen3-4B, 1k-token chain | 0.03 / 0.01, 0.51, 0.16 | 0.655, 0.47 |
+  | Qwen3-8B, thinking off | 0.00 / 0.00, 0.51, 0.07 | 0.72, 0.72 |
+
+  Acceptance is readable from the chain (the 8B monitor's across-problem correlation is 0.72 without thinking);
+  tampering is not: no monitor flags more than 3% of the tampered chains, and the 4B monitor's across-problem
+  correlation of 0.16 on tampering comes from a monitor spread of 0.03. This matches the chains themselves -- only 2%
+  of the base model's chains that go on to edit the tests mention the tests or the assertions at all, so the monitor
+  has nothing to read. The tampering half of the rubric therefore starts from a blind monitor whichever model is
+  used; the training question is whether the legibility reward makes the policy write chains the monitor can read.
+- 2026-10-05: the two-GPU training job works end to end (smoke test of the legibility reward, 2 steps: the monitor
+  served on GPU 1, chains generated and scored, monitor queried, logs written; every chain hit the 4k thinking budget).

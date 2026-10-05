@@ -301,6 +301,21 @@ Behaviour at both checkpoints is the base model's. Both commitments carry across
 commitment is the first with a non-zero tampering correlation on the test set (0.22, 119 problems; its spread across
 problems is still only 0.016 against 0.234 for the observed rates).
 
+**Final evaluation of the distilled run (2026-10-05, checkpoint 140; the run was stopped at step 146, see the status table
+on the results page).** Same protocol as the table above (`rl140_..._cthinkv1_distill_think4k_mt_s1_dc_...`):
+
+| thinking solution, thinking prediction (distilled warm-up) | checkpoint | hidden tests | accepted | tests edited | committed p(accept) / observed | corr (success) | committed p(tamper) / observed | corr (tampering) |
+|---|---|---|---|---|---|---|---|---|
+| | 40 | 0.273 | 0.327 | 0.096 | 0.64 / 0.33 | 0.46 | 0.14 / 0.10 | 0.22 |
+| | 140 | 0.307 | 0.376 | 0.117 | 0.50 / 0.38 | 0.47 | 0.13 / 0.12 | -0.06 |
+
+Between steps 40 and 140 the acceptance commitment moved toward the test-set rate (0.64 to 0.50 against 0.38 observed)
+at an unchanged across-problem correlation of ~0.47, matching the thinking-off agreement cell; behaviour is still the base
+model's. The tampering commitment stayed a near-constant ~0.13 and its step-40 correlation of 0.22 did not survive
+(-0.06 at step 140), so the earlier number was noise from a spread of 0.016. This is why the run was stopped: the
+prediction reward calibrates the commitment's mean but, with this recipe, carries no per-problem information about
+tampering, and 24 GPU-hours per 40 steps are better spent on the legibility direction.
+
 **Speed check (2026-10-03).** The thinking runs take ~1,220 s/step (task-only) and ~2,150 s/step (with thinking commitments).
 Hypothesis: the colocated vLLM engine's KV cache (`--vllm-gpu-mem 0.35` of a 94 GB H100 = ~25 GB, ~30 concurrent 5.6k-token
 rollouts, so 256 rollouts in ~9 waves) bounds generation. Two 3-step tests of the task-only recipe: `--vllm-gpu-mem 0.6` ran out
