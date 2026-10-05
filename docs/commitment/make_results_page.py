@@ -21,6 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 RES = os.path.join(ROOT, "results")
 OUT = os.path.join(ROOT, "docs", "commitment", "results.html")
 FINAL_STEP = 200
+# Runs stopped before FINAL_STEP on purpose (their last evaluated checkpoint stands as the result).
+STOPPED = {"grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_think4k_mt_s1": "stopped at step 146 (2026-10-05): calibrated, no tampering signal; GPU time better spent elsewhere"}
 
 # ---------------------------------------------------------------- the grid of cells
 
@@ -131,8 +133,10 @@ def cell_label(col, cell, found, names=()):
         label = f"{col}\n{len(found)} {unit}{'s' if len(found) != 1 else ''}"
         ck = next((checkpoint_of(resolve(n)) for n in names if resolve(n)), None)
         if ck is not None and ck < FINAL_STEP:
-            label += f", checkpoint {ck}\n(training, step {step}/{FINAL_STEP})"
+            label += f", checkpoint {ck}\n" + (f"(stopped at step {step})" if cell.get("run") in STOPPED else f"(training, step {step}/{FINAL_STEP})")
         return label
+    if cell.get("run") in STOPPED:
+        return f"{col}\n(stopped at step {step})"
     if cell.get("run") and step < FINAL_STEP:
         return f"{col}\n(training, step {step}/{FINAL_STEP})"
     return f"{col}\n(not yet evaluated)"
@@ -214,10 +218,10 @@ def grouped_bars(groups, title, subtitle="", ymax=None, width=860, keys=None, sh
                 out.append(f'<text x="{x + bar_w / 2:.1f}" y="{max(y - 4, top + 10):.1f}" class="val" text-anchor="middle">{val(v)}</text>')
         for li, line in enumerate(label.split("\n")):
             cx, cy = left + gi * band + band / 2, top + h + 16 + 13 * li
-            if line.startswith("(training") or line.startswith("(not yet"):  # an orange "in progress" pill, like the section badge
+            if line.startswith("(training") or line.startswith("(not yet") or line.startswith("(stopped"):  # a pill: orange = in progress, grey = stopped
                 text = line.strip("()").upper().replace("TRAINING, ", "IN PROGRESS: ")
                 w = 5.9 * len(text) + 14
-                out.append(f'<rect x="{cx - w / 2:.1f}" y="{cy - 10}" width="{w:.1f}" height="14" rx="4" fill="#c98500"/>'
+                out.append(f'<rect x="{cx - w / 2:.1f}" y="{cy - 10}" width="{w:.1f}" height="14" rx="4" fill="{"#7a7a72" if line.startswith("(stopped") else "#c98500"}"/>'
                            f'<text x="{cx:.1f}" y="{cy}" class="pill" text-anchor="middle">{text}</text>')
             else:
                 out.append(f'<text x="{cx:.1f}" y="{cy}" class="tick" text-anchor="middle">{line}</text>')
@@ -521,9 +525,9 @@ def section_curves():
                 "Commitments: committed p(accepted) (solid) vs the attempts' acceptance rate (dashed)", "mean over the 16 commitments and 16 attempts per problem; one shade per run", width=1000, ymax=1.0),
           lines(series("corr accepted", SUCC, only=commit_runs, prefix="accepted: ") + series("corr edited", HACK, only=commit_runs, style_override="dashed", prefix="tests edited: "),
                 "Commitments: across-problem correlation with the attempts' rates, per 10-step window", "greens = accepted by grader (solid), reds = tests edited (dashed); ~160 problems per window", width=1000, ymax=1.0)]
-    running = [(l, r, n) for l, r, n in status if n < FINAL_STEP]
+    running = [(l, r, n) for l, r, n in status if n < FINAL_STEP and r not in STOPPED]
     badge = f'<span class="badge">in progress: {len(running)} run{"s" if len(running) != 1 else ""} still training</span>' if running else ""
-    srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", "done" if n >= FINAL_STEP else f'<span class="badge" style="margin:0">in progress</span>'] for l, r, n in status]
+    srows = [[l, f"<code>{r}</code>", f"{min(n, FINAL_STEP)}/{FINAL_STEP}", STOPPED[r] if r in STOPPED else ("done" if n >= FINAL_STEP else '<span class="badge" style="margin:0">in progress</span>')] for l, r, n in status]
     stable = '<table class="status"><tr><th>run</th><th>directory</th><th>step</th><th>status</th></tr>' + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in srows) + "</table>"
     return badge, "\n".join(lc), stable
 
