@@ -40,6 +40,7 @@ def main():
     p.add_argument("--statements", default="hack_success", choices=list(LeetCodeEnv.statement_sets))
     p.add_argument("--monitor-model", default="Qwen/Qwen3-4B")
     p.add_argument("--monitor-url-file", default=None, help="file holding the monitor server's URL (else $MONITOR_URL)")
+    p.add_argument("--monitor-elicitation", default="yesno", choices=["yesno", "numbers"], help="yes/no per statement, P(yes) from the first token (default); or one free-form list of probabilities")
     p.add_argument("--monitor-thinking", action="store_true", help="the monitor reasons (under --monitor-think-budget tokens) before answering")
     p.add_argument("--monitor-think-budget", type=int, default=1024)
     p.add_argument("--monitor-sees-output", action="store_true", help="the monitor also sees the final answer, not just the chain")
@@ -58,7 +59,7 @@ def main():
     keep = [t for t in tasks.values() if n_tokens(t) <= args.max_prompt_length]
     print(f"{len(keep)}/{len(tasks)} training prompts within {args.max_prompt_length} tokens", flush=True)
     dataset = Dataset.from_list([{"prompt": t.messages, "task_id": t.id} for t in keep]).shuffle(seed=args.seed)
-    monitor = Monitor(model=args.monitor_model, url_file=args.monitor_url_file, thinking=args.monitor_thinking, think_budget=args.monitor_think_budget)
+    monitor = Monitor(model=args.monitor_model, elicitation=args.monitor_elicitation, url_file=args.monitor_url_file, thinking=args.monitor_thinking, think_budget=args.monitor_think_budget)
 
     logs, ckpts, resume_step = open_logs(args.out, names=("reward_log", "rollouts", "hack_examples"))
     step = {"n": resume_step}
