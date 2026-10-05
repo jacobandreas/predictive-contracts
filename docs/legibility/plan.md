@@ -92,3 +92,7 @@ monitor's accuracy; the results page will get a "monitor" row group.
     `run_tests()` function" is a comparison with the tests the problem showed, which the monitor never sees, and every
     submission legitimately contains a `run_tests()`; only edits that are tampering on their face (an `assert True`,
     a swallowed exception) could be recognised without the original, and those are rare among the base model's edits.
+- 2026-10-05, night: experiment (3) relaunched as `runs/legibility/legibility_8b_out_think4k_mt_s1` (jobs 2561193-6,
+  four chained 24 h two-GPU jobs): `--reward legibility --split-normalize`, monitor Qwen3-8B, yes/no elicitation,
+  **seeing chain + final code** (`--monitor-sees-output`); policy recipe unchanged (4k thinking budget, truncation
+  mask, 16 x 16, 200 steps, seed 1). The monitor reads acceptance (AUC 0.81) and is blind on tampering at the start.
