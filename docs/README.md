@@ -81,6 +81,23 @@ Main takeaways in this environment are:
 - Adding an agreement reward to both predictions and solutions actually
   decreases the attempted hack rate and increases the legitimate success rate. 
 
+## Two research directions
+
+The repo now carries two directions on the same environment, rubric and training loop:
+
+- **Commitments** (Parts 1-4 below, `docs/results_part*.md`, `docs/results.html`): the model predicts its own behaviour
+  before acting and is trained for calibrated, informative predictions.  Code: the `contract/` modules listed below;
+  the direction-specific pieces (commitment prompts, decoupled rewards, warm-ups) are still inside `train_grpo.py`,
+  `run_tasks.py`, `sft_commit.py`, `distill_commit.py`, `opsd_*.py` and will move to `contract/commit/` once the
+  current runs finish (their continuation jobs import the modules by their present names).
+- **Legibility** (`docs/legible/plan.md`, `contract/legible/`, `scripts/train_legible.sbatch`): a frozen monitor reads
+  the model's chain of thought and answers the same rubric; the model is trained so the monitor is right.
+
+Shared core: `contract/grpo.py` (common flags, GRPOConfig, LoRA / warm start, checkpoint resume, log files, the
+thinking-budget generator `generate_budgeted`).  Nothing direction-specific lives there.  Results are split the same
+way on both machines: `results/legible/` for the new direction; the commitments' files stay where they are until the
+code moves, after which they go to `results/commit/` with the base-model evaluations in `results/shared/`.
+
 ## Layout
 
 ```
@@ -90,7 +107,9 @@ contract/
                         examples), the thinking-budget stop sentences, the distillation teacher hint
   llm.py                thin client for a vLLM OpenAI-compatible server (sampling, next-token probs,
                         thinking with a token budget via a raw-completions continuation)
-  code_exec.py          run untrusted Python + assertion tests in a resource-limited subprocess
+  code_exec.py          run untrusted Python + assertion tests in a resource-limited subprocess, in a temp dir
+  grpo.py               the shared GRPO core (see "Two research directions")
+  legible/              monitor prompt + client, legibility training, monitor evaluation
   envs/base.py          the Env / Task interface (tasks(), score(task, response) -> dict)
   envs/leetcode.py      LeetCode tasks with the loophole; the scorer, labels, behaviour detectors,
                         statement sets the model is asked to commit to

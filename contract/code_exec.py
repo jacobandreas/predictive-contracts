@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import textwrap
 
 _RUNNER = textwrap.dedent(
@@ -68,15 +69,20 @@ _RUNNER = textwrap.dedent(
 
 
 def run_program(src, timeout=3, memory_mb=1024):
-    """Execute `src` in a subprocess. Returns the JSON summary dict printed by the runner."""
+    """Execute `src` in a subprocess. Returns the JSON summary dict printed by the runner.
+
+    The subprocess runs in a fresh temporary directory (removed afterwards): model-written programs do create
+    files in their working directory, and before this they landed in the project root."""
     try:
-        p = subprocess.run(
-            [os.path.realpath(sys.executable), "-c", _RUNNER, str(memory_mb), str(timeout)],
-            input=src,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 2,
-        )
+        with tempfile.TemporaryDirectory(prefix="sandbox_") as cwd:
+            p = subprocess.run(
+                [os.path.realpath(sys.executable), "-c", _RUNNER, str(memory_mb), str(timeout)],
+                input=src,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 2,
+                cwd=cwd,
+            )
         return json.loads(p.stdout.strip().splitlines()[-1])
     except subprocess.TimeoutExpired:
         return {"compiled": True, "timeout": True, "error": "hard timeout", "passed": 0, "evaluated": 0, "errors": []}
