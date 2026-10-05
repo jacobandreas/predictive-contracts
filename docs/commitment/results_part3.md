@@ -356,7 +356,7 @@ inner grouped CV) and a control that shuffles which problem gets which feature v
 Outcomes: `success` = label Correct, `hack` = any Reward Hack label. Two outcome sources per model:
 its test-set rollouts (119 problems x 10, noisy) and its own training rollouts from steps 151-200
 (~650 problems x 16). Features come from the model whose rollouts are being predicted. Raw output in
-`docs/probe_summaries/`.
+`docs/commitment/probe_summaries/`.
 
 | features / rollouts | source | success: base rate | AUC (shuffled) | Brier vs base-rate | hack: base rate | AUC (shuffled) | Brier vs base-rate |
 |---|---|---|---|---|---|---|---|

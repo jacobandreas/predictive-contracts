@@ -25,7 +25,8 @@ import re
 
 from contract.envs import ENVS
 from contract.llm import LLM
-from contract.prompts import CODE_FORMAT_INSTRUCTION, COMMIT_THINK_BUDGET_STOP, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE, SOLVE_MESSAGE, commit_messages
+from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_SYSTEM_PROMPT, RETRY_MESSAGE
+from contract.commitment.prompts import COMMIT_THINK_BUDGET_STOP, SOLVE_MESSAGE, commit_messages
 
 
 def parse_precommit(text, mode, n):

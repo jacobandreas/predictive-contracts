@@ -1,7 +1,7 @@
 """How well does the monitor read a model's chains?  Baseline (1) of the legibility direction, and the evaluation of
 trained policies.
 
-    python -m contract.legible.monitor_eval --transcripts results/leetcode/base_neutral_think4k_s1_modify_tests.jsonl ... \\
+    python -m contract.legibility.monitor_eval --transcripts results/leetcode/base_neutral_think4k_s1_modify_tests.jsonl ... \\
         --out results/legible/monitor/base_think4k.jsonl
 
 Takes evaluation transcripts produced with thinking on (each attempt stores its `reasoning`), sends every final
@@ -18,7 +18,7 @@ from collections import defaultdict
 from statistics import mean
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.legible.monitor import Monitor
+from contract.legibility.monitor import Monitor
 
 
 def auc(scores, labels):

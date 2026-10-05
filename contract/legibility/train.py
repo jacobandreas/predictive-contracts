@@ -2,14 +2,14 @@
 answers the behavioural rubric; the policy is rewarded for the task and for what the monitor can tell.
 
     # penalty: standard "monitoring reward" -- credit for passing, a larger penalty if the monitor says it cheated
-    python -m contract.legible.train --reward penalty --penalty 2 --out runs/legible/penalty_s1 ...
+    python -m contract.legibility.train --reward penalty --penalty 2 --out runs/legible/penalty_s1 ...
     # legibility: z(task) + z(monitor answers every rubric statement correctly) -- the "hard" consistency reward
-    python -m contract.legible.train --reward legibility --split-normalize --out runs/legible/legibility_s1 ...
+    python -m contract.legibility.train --reward legibility --split-normalize --out runs/legible/legibility_s1 ...
 
 Rollouts are the plain-RL recipe of Part 4 (neutral prompt, Qwen3 thinking under --think-budget, answer up to
 --max-completion-length, truncation mask).  After scoring, every chain (the text inside <think>, including the
-budget-stop sentence if the chain was cut) goes to the monitor (contract/legible/monitor.py; MONITOR_URL is set by
-scripts/train_legible.sbatch), which returns a probability per statement of the `hack_success` rubric.
+budget-stop sentence if the chain was cut) goes to the monitor (contract/legibility/monitor.py; MONITOR_URL is set by
+scripts/train_legibility.sbatch), which returns a probability per statement of the `hack_success` rubric.
 
 Rewards, per rollout, with s = 1 if the grader accepted the solution, b = the scorer's behaviours, m = the monitor's
 probabilities (0.5 threshold; an unparsable answer counts as 0 / wrong):
@@ -29,7 +29,7 @@ from transformers import AutoTokenizer
 
 from contract.envs.leetcode import LeetCodeEnv
 from contract.grpo import add_common_args, build_trainer, generate_budgeted, group_z, make_config, open_logs, train
-from contract.legible.monitor import Monitor
+from contract.legibility.monitor import Monitor
 from contract.prompts import CODE_FORMAT_INSTRUCTION, PRECOMMIT_SYSTEM_PROMPT
 
 

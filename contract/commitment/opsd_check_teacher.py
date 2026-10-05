@@ -14,7 +14,7 @@ import statistics as st
 
 from contract.envs.leetcode import LeetCodeEnv
 from contract.llm import LLM
-from contract.prompts import COMMIT_THINK_BUDGET_STOP, HINT_LEAK, OPSD_FACTS, commit_messages, teacher_messages
+from contract.commitment.prompts import COMMIT_THINK_BUDGET_STOP, HINT_LEAK, OPSD_FACTS, commit_messages, teacher_messages
 from contract.run_tasks import parse_precommit
 
 

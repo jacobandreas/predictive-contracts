@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Legibility training job: two GPUs on one node.  GPU 1 serves the frozen monitor (vLLM, base model); GPU 0 trains.
-#   sbatch --time=24:00:00 scripts/train_legible.sbatch venv_train/bin/python -m contract.legible.train --reward legibility ...
+#   sbatch --time=24:00:00 scripts/train_legibility.sbatch venv_train/bin/python -m contract.legibility.train --reward legibility ...
 #
 #SBATCH --job-name=contract_legible
 #SBATCH --account=lingo

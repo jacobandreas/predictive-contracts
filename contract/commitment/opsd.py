@@ -38,9 +38,9 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import pad
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
+from contract.commitment.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
 from contract.run_tasks import parse_precommit
-from contract.train_grpo import generate_budgeted
+from contract.grpo import generate_budgeted
 
 
 def main():

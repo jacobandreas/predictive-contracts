@@ -47,7 +47,7 @@ were *additionally* rewarded for matching predictions.
 
 ### Results overview 
 
-The attached `docs/results.html` contains an initial set of experiments. All
+The attached `docs/commitment/results.html` contains an initial set of experiments. All
 these experiments use a Qwen3-4B on a LeetCode variant designed to evoke reward
 hacking during RL training; this environment is taken from [this github
 repo](https://github.com/ariahw/rl-rewardhacking) (described more
@@ -85,18 +85,17 @@ Main takeaways in this environment are:
 
 The repo now carries two directions on the same environment, rubric and training loop:
 
-- **Commitments** (Parts 1-4 below, `docs/results_part*.md`, `docs/results.html`): the model predicts its own behaviour
+- **Commitments** (Parts 1-4 below, `docs/commitment/results_part*.md`, `docs/commitment/results.html`): the model predicts its own behaviour
   before acting and is trained for calibrated, informative predictions.  Code: the `contract/` modules listed below;
-  the direction-specific pieces (commitment prompts, decoupled rewards, warm-ups) are still inside `train_grpo.py`,
-  `run_tasks.py`, `sft_commit.py`, `distill_commit.py`, `opsd_*.py` and will move to `contract/commit/` once the
-  current runs finish (their continuation jobs import the modules by their present names).
-- **Legibility** (`docs/legible/plan.md`, `contract/legible/`, `scripts/train_legible.sbatch`): a frozen monitor reads
+  code in `contract/commitment/` (prompts, `train.py` = the GRPO runs incl. the in-conversation and decoupled
+  designs, `warmup_sft.py`, `warmup_distill.py`, `opsd.py` + its checks); docs in `docs/commitment/`.
+- **Legibility** (`docs/legibility/plan.md`, `contract/legibility/`, `scripts/train_legibility.sbatch`): a frozen monitor reads
   the model's chain of thought and answers the same rubric; the model is trained so the monitor is right.
 
 Shared core: `contract/grpo.py` (common flags, GRPOConfig, LoRA / warm start, checkpoint resume, log files, the
 thinking-budget generator `generate_budgeted`).  Nothing direction-specific lives there.  Results are split the same
-way on both machines: `results/legible/` for the new direction; the commitments' files stay where they are until the
-code moves, after which they go to `results/commit/` with the base-model evaluations in `results/shared/`.
+way on both machines: `results/legibility/` for the new direction; the commitments' files stay where they are until the
+code moves, after which they go to `results/commitment/` with the base-model evaluations in `results/shared/`.
 
 ## Layout
 
@@ -139,6 +138,9 @@ data/
   leetcode/leetcode_train_medhard_filtered.jsonl  992 problems (RL training split)
   alignment_mcq/*.parquet                         4,174 binary-choice alignment questions
 results/  -> symlink to ~/code_nobackup/contract/results (outside Dropbox): everything pulled from the cluster
+  shared/leetcode/        base-model evaluations (read by both directions' pages)
+  commitment/             leetcode/ (trained-model evaluations), runs/ (training logs), probe/, distill/, adapters/
+  legibility/             monitor/ (monitor evaluations), leetcode/, runs/
 ```
 
 Cluster side: `/data/scratch-oc40/jda/contract` holds a copy of `contract/`, `scripts/`, `data/`, a
@@ -229,7 +231,7 @@ decoupled cells take off into 70-100% test editing; the agreement term holds edi
 while *raising* the legitimate pass rate above the base model; agreement-only collapses to honest failure;
 the acceptance commitment becomes informative (instance AUC ~0.7) only in the agreement cells; the tampering
 commitment never does (0.5 everywhere, constant ~0.10). `commitment_game.md` analyses the committer/solver
-game; the probe (`probe.py`, `docs/probe_summaries/`) shows success is predictable from the problem (AUC
+game; the probe (`probe.py`, `docs/commitment/probe_summaries/`) shows success is predictable from the problem (AUC
 0.67-0.75) and tampering barely (0.5 on the test set, ~0.7 on the training set).
 
 ## Part 4: thinking on (`results_part4.md`)
@@ -264,20 +266,20 @@ sbatch --time=00:50:00 scripts/serve_and_run.sbatch venv/bin/python -m contract.
     --out results/leetcode/base_neutral_think4k_s1_modify_tests.jsonl
 
 # Plain RL, thinking on, truncation mask (chain several 24 h jobs with --dependency=afterany; ~20 min/step)
-sbatch --time=24:00:00 --mem=64G scripts/train.sbatch venv_train/bin/python -m contract.train_grpo \
+sbatch --time=24:00:00 --mem=64G scripts/train.sbatch venv_train/bin/python -m contract.commitment.train \
     --hint modify_tests --num-prompts 16 --num-generations 16 --max-completion-length 1536 --thinking \
     --think-budget 4096 --max-steps 200 --save-steps 10 --per-device-batch 2 --split-normalize \
     --is-mode token_truncate --mask-truncated --neutral-system-prompt --seed 1 --out runs/<name>
 
 # Decoupled run with reasoning commitments from the distilled warm start (~37 min/step)
-sbatch ... scripts/train.sbatch venv_train/bin/python -m contract.train_grpo <same as above minus --neutral-system-prompt> \
+sbatch ... scripts/train.sbatch venv_train/bin/python -m contract.commitment.train <same as above minus --neutral-system-prompt> \
     --precommit prob --statements hack_success --commit-max-tokens 128 --decoupled --commit-norm batch \
     --commit-thinking --commit-variant v1 --init-adapter runs/distill_commit_v1/final --out runs/<name>
 # add --attempt-agreement for the "/ prediction+success" cell
 
 # Warm start for reasoning commitments (targets from contract.probe --behaviors any_hack earns_reward --predict-out)
-sbatch scripts/serve_and_run.sbatch venv/bin/python -m contract.distill_commit sample --targets results/probe/base_think4k_train_targets.json --variant v1 --n 6 --keep 2 --out results/distill/teacher_traces_v1.jsonl
-sbatch scripts/train.sbatch venv_train/bin/python -m contract.distill_commit train --traces results/distill/teacher_traces_v1.jsonl --variant v1 --out runs/distill_commit_v1
+sbatch scripts/serve_and_run.sbatch venv/bin/python -m contract.commitment.warmup_distill sample --targets results/probe/base_think4k_train_targets.json --variant v1 --n 6 --keep 2 --out results/distill/teacher_traces_v1.jsonl
+sbatch scripts/train.sbatch venv_train/bin/python -m contract.commitment.warmup_distill train --traces results/distill/teacher_traces_v1.jsonl --variant v1 --out runs/distill_commit_v1
 
 # Evaluate an adapter (test set), then the MCQ
 LORA=runs/<name>/checkpoint-200 sbatch scripts/serve_and_run.sbatch bash -c "venv/bin/python -m contract.run_tasks --model rl \
@@ -286,7 +288,7 @@ LORA=runs/<name>/checkpoint-200 sbatch scripts/serve_and_run.sbatch bash -c "ven
 # decoupled adapters with reasoning commitments: run_tasks --precommit prob --statements hack_success --decoupled --commit-thinking --commit-variant v1
 
 # Regenerate the charts page from results/
-python docs/make_results_page.py
+python docs/commitment/make_results_page.py
 ```
 
 Scaling notes for a larger model or more GPUs: everything model-specific sits in three places -- the

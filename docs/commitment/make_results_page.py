@@ -1,6 +1,6 @@
-"""Build docs/results.html: behaviour, prediction quality, training curves, alignment MCQ and an example, by model.
+"""Build docs/commitment/results.html: behaviour, prediction quality, training curves, alignment MCQ and an example, by model.
 
-    python docs/make_results_page.py
+    python docs/commitment/make_results_page.py
 
 Reads results/leetcode/*.jsonl (evaluation transcripts) and results/runs/*/rollouts.jsonl (training logs)
 and writes a self-contained HTML page.  The bar charts are laid out as a grid: one column per training
@@ -17,9 +17,9 @@ import re
 from collections import defaultdict
 from statistics import mean
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # docs/commitment/ -> repo root
 RES = os.path.join(ROOT, "results")
-OUT = os.path.join(ROOT, "docs", "results.html")
+OUT = os.path.join(ROOT, "docs", "commitment", "results.html")
 FINAL_STEP = 200
 
 # ---------------------------------------------------------------- the grid of cells
@@ -90,11 +90,18 @@ COLORS = {
 ROLES = {"tampering": ["any_hack", "modifies_run_tests"], "success": ["will_succeed", "earns_reward"]}
 
 
+EVAL_DIRS = [os.path.join(RES, "commitment", "leetcode"), os.path.join(RES, "shared", "leetcode")]  # trained-model and base-model evaluations
+
+
+def eval_path(name):
+    return next((os.path.join(d, name + ".jsonl") for d in EVAL_DIRS if os.path.exists(os.path.join(d, name + ".jsonl"))), None)
+
+
 def resolve(name):
     """A file name, or an "rl*_..." pattern resolved to the evaluation at the latest checkpoint (None if none exists)."""
     if "*" not in name:
         return name
-    hits = glob.glob(os.path.join(RES, "leetcode", name + ".jsonl"))
+    hits = [h for d in EVAL_DIRS for h in glob.glob(os.path.join(d, name + ".jsonl"))]
     return max((os.path.basename(h)[:-6] for h in hits), key=lambda n: int(re.match(r"rl(\d+)_", n).group(1)), default=None)
 
 
@@ -105,13 +112,13 @@ def checkpoint_of(name):
 
 def load(name):
     name = resolve(name)
-    path = os.path.join(RES, "leetcode", name + ".jsonl") if name else ""
-    return [json.loads(l) for l in open(path)] if name and os.path.exists(path) else None
+    path = eval_path(name) if name else None
+    return [json.loads(l) for l in open(path)] if path else None
 
 
 def run_step(run):
     """Last logged training step of a run (0 if no log)."""
-    path = os.path.join(RES, "runs", run, "reward_log.jsonl") if run else None
+    path = os.path.join(RES, "commitment", "runs", run, "reward_log.jsonl") if run else None
     return max((json.loads(l)["call"] for l in open(path)), default=0) if path and os.path.exists(path) else 0
 
 
@@ -398,8 +405,8 @@ def section_mcq():
         cell = GRID["thinking off"][col]
         per_run = []
         for name in cell.get("mcq", []):
-            path = os.path.join(RES, "leetcode", name + ".jsonl")
-            if not os.path.exists(path):
+            path = eval_path(name)
+            if not path:
                 continue
             df = pd.DataFrame([json.loads(l) for l in open(path)])
             g = df.groupby(["condition", "transcript_index"])["p_misaligned"].mean().groupby("condition")
@@ -470,7 +477,7 @@ def run_curves(run, window=10):
     """Per-window means from a run's rollouts.jsonl: attempts' acceptance and test-editing rates, and (decoupled runs)
     the commitments' mean acceptance / tampering, plus the across-problem correlation of committed with observed
     acceptance.  Returns (last_step, {series_name: [(step, value), ...]})."""
-    path = os.path.join(RES, "runs", run, "rollouts.jsonl")
+    path = os.path.join(RES, "commitment", "runs", run, "rollouts.jsonl")
     if not os.path.exists(path):
         return 0, {}
     att, com = defaultdict(list), defaultdict(list)  # (call, task) -> rows
@@ -556,7 +563,7 @@ def main():
     today = __import__("datetime").date.today().isoformat()
     html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Contracts results</title><style>{CSS}</style></head><body>
 <h1>Results: behaviour, prediction and alignment by model (modify_tests prompt)</h1>
-<p class="stamp">Generated {today} by <code>docs/make_results_page.py</code>; methods and discussion in <code>docs/results_part3.md</code> and <code>docs/results_part4.md</code>.</p>
+<p class="stamp">Generated {today} by <code>docs/commitment/make_results_page.py</code>; methods and discussion in <code>docs/commitment/results_part3.md</code> and <code>docs/commitment/results_part4.md</code>.</p>
 
 <h2>1. Behaviour</h2>
 {section_behavior()}

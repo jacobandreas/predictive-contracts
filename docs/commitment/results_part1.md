@@ -10,7 +10,7 @@
 > compared with runs trained under `token_truncate`.
 > Base-model (inference-only) results are unaffected.
 
-Charts of every finished run: `docs/results.html` (regenerate with `python docs/make_results_page.py`
+Charts of every finished run: `docs/commitment/results.html` (regenerate with `python docs/commitment/make_results_page.py`
 after pulling new results; sections mirror this file).
 
 Model: `Qwen/Qwen3-4B` served with vLLM 0.28, bf16, thinking **off**, temperature 0.7, top-p 0.95,

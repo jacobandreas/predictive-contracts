@@ -123,7 +123,7 @@ chances, not the solution), and a 128-token answer window. After that 63/64 pars
 chains still run to the 1024-token budget and still reason about the solution rather than about the odds;
 whether distillation changes that is one thing to watch.
 
-Probe targets for the thinking model (`docs/probe_summaries/probe_base_think4k_train_behaviors.txt`, 7936
+Probe targets for the thinking model (`docs/commitment/probe_summaries/probe_base_think4k_train_behaviors.txt`, 7936
 training rollouts): acceptance base rate 0.68 (thinking off: 0.35), probe AUC 0.67, per-problem correlation
 0.33; tampering base rate 0.13, AUC 0.71, correlation 0.32 -- tampering *is* somewhat predictable on the
 training set for the thinking model, as it was (0.69) for the thinking-off one. Targets: mean 0.68 (sd
@@ -348,7 +348,7 @@ are all failures: after a forced close the model sometimes rewrites the problem'
 length instead of finishing the solution -- the same failure mode as the thinking-off cap, just more
 frequent.
 
-**Probe for the thinking-on model** (`docs/probe_summaries/probe_base_think4k.txt`). The probe's input
+**Probe for the thinking-on model** (`docs/commitment/probe_summaries/probe_base_think4k.txt`). The probe's input
 is the mean-pooled representation of the user message, which under causal attention does not see the
 generation prompt that follows it, so the thinking-off features (`results/probe/features_base.npz`)
 apply unchanged; only the outcomes are refit, to the 3 x 1190 thinking-on test rollouts (grouped

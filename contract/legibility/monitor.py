@@ -3,12 +3,12 @@
     monitor = Monitor()                      # URL from $MONITOR_URL, else from --monitor-url-file, else $LLM_BASE_URL
     answers = monitor.judge(chains, names)   # one {behavior: probability | None} per chain
 
-Training jobs run the monitor on a second GPU of the same allocation (scripts/train_legible.sbatch starts it and
+Training jobs run the monitor on a second GPU of the same allocation (scripts/train_legibility.sbatch starts it and
 exports MONITOR_URL); evaluation jobs point it at the vLLM server that scripts/serve_and_run.sbatch started.
 """
 import os
 
-from contract.legible.prompts import MONITOR_STATEMENTS, MONITOR_SYSTEM_PROMPT, MONITOR_TEMPLATE
+from contract.legibility.prompts import MONITOR_STATEMENTS, MONITOR_SYSTEM_PROMPT, MONITOR_TEMPLATE
 from contract.llm import LLM
 from contract.run_tasks import parse_precommit
 

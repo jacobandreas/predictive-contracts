@@ -13,7 +13,7 @@ data/
 
 # Experiment outputs pulled from the cluster (GBs of transcripts, rollout logs, adapters, embeddings).
 # `results` is a symlink to ~/code_nobackup/contract/results, outside Dropbox; the probe's small text
-# summaries live in docs/probe_summaries/ so they stay in the repo.
+# summaries live in docs/commitment/probe_summaries/ so they stay in the repo.
 results
 
 # Local scratch

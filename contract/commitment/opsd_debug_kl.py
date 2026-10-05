@@ -14,7 +14,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
+from contract.commitment.prompts import COMMIT_THINK_BUDGET_STOP, OPSD_FACTS, OPSD_TEACHER_HINT, commit_messages
 
 
 def main():

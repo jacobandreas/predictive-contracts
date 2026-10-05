@@ -20,7 +20,8 @@ import json
 from transformers import AutoTokenizer
 
 from contract.envs.leetcode import LeetCodeEnv
-from contract.prompts import PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS, PRECOMMIT_SYSTEM_PROMPT
+from contract.prompts import PRECOMMIT_SYSTEM_PROMPT
+from contract.commitment.prompts import PRECOMMIT_INTRO, PRECOMMIT_QUESTIONS
 
 
 def bucket(p):
