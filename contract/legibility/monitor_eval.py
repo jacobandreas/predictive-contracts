@@ -39,12 +39,14 @@ def main():
     p.add_argument("--transcripts", nargs="+", required=True)
     p.add_argument("--statements", default="hack_success", choices=list(LeetCodeEnv.statement_sets))
     p.add_argument("--monitor-model", default="Qwen/Qwen3-4B")
+    p.add_argument("--monitor-thinking", action="store_true", help="the monitor reasons (under --monitor-think-budget tokens) before answering")
+    p.add_argument("--monitor-think-budget", type=int, default=1024)
     p.add_argument("--out", required=True)
     args = p.parse_args()
     names = LeetCodeEnv.statement_sets[args.statements]
     rows = [t for path in args.transcripts for t in map(json.loads, open(path))]
     chains = [(t["attempts"][-1].get("reasoning") or "") for t in rows]
-    monitor = Monitor(model=args.monitor_model)
+    monitor = Monitor(model=args.monitor_model, thinking=args.monitor_thinking, think_budget=args.monitor_think_budget)
     answers, raw = monitor.judge(chains, names)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:

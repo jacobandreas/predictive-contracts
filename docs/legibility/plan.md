@@ -36,3 +36,9 @@ monitor's accuracy; the results page will get a "monitor" row group.
 - 2026-10-05: code in place (`contract/grpo.py` extracted as the shared core; `contract/legibility/{prompts,monitor,
   train,monitor_eval}.py`; `scripts/train_legibility.sbatch`). Sandbox for model code moved to a temporary directory
   (model programs had been writing files into the project root). Baseline (1) and a smoke test of (3) launched.
+- 2026-10-05, baseline (1), first result: the untrained Qwen3-4B monitor, thinking off, reading only the chain, is
+  blind on the base model's 3,570 chains: it answers ~0.15 for tampering and ~0.85 for acceptance on every chain
+  (sd 0.001 / 0.004), i.e. a constant; AUC 0.50 on both statements, hit rate 0 for tampering (`results/legibility/
+  monitor/base_think4k.jsonl`). With that monitor the penalty reward collapses to the task reward (it never flags) and
+  the legibility reward to "accepted and did not tamper". Before training against it: the same monitor with a
+  1,024-token chain of its own, and Qwen3-8B with and without thinking, on one seed's chains.
