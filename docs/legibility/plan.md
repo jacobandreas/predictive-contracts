@@ -137,3 +137,18 @@ monitor's accuracy; the results page will get a "monitor" row group.
   than to *start* one: the onset is one token's decision at each of ~450 sentence boundaries, and no chain ever started
   one. Running: the onset probability itself (first token of the statement, adapter vs base), and `distill_legible_insert4`,
   the same traces with the loss on the statement tokens only (3 epochs, lr 5e-5; jobs 2566553-5).
+- 2026-10-06, night: onset diagnostics and the statement-only-loss variant (`distill_legible_insert4`, 3 epochs, lr 5e-5,
+  loss on the statement tokens only = 1% of the tokens).
+  - Onset log-probability of the statement's first token at its own training boundary: base -21 (median), chain-loss
+    adapter (insert3) -12, statement-only adapter (insert4) -0.04. The base model essentially never starts a paragraph
+    with "I am changing ..." in this register; the chain-loss fine-tune raised the onset by ~9 nats but to ~1e-5 per
+    boundary, which nucleus sampling (top-p 0.95) never draws -- hence exactly 0 statements in 1,190 chains rather than
+    a handful.
+  - The statement-only loss overshot into collapse: 1,177 of 1,190 test chains contain ten or more "I'm changing / I'm
+    removing ..." sentences, the answers are more statements (6% contain code), 2 of 1,190 solutions accepted.
+  - The tension is structural: a statement placed at a uniformly random boundary is a position-independent event with
+    a per-boundary rate of ~1/450, which is either below the sampling threshold or, once learned, fires everywhere. The
+    chains offer no content cue either: an explicit test-discrepancy remark ("maybe the test case is wrong", "the test
+    expects 3 but I get 2") appears in 10% of the tampered training chains and 7% of the clean ones. What the model
+    knows about its tampering it knows when it writes the code, i.e. at the end of the chain, which under the 4k budget
+    is the budget cut -- the reason the end-of-chain insertions could not work either.
