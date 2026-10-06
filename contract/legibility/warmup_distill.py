@@ -33,7 +33,9 @@ for the clean traces, the answer tokens: the tampered answers themselves carry n
 1:1 mix teaches the model to tamper far more often than its 13% (the first runs, trained on the answers too, went from 13%
 to 21% test-set tampering).  With --loss-on statement only the inserted statement's tokens carry loss: ~60 tokens of
 statement per trace against ~5,000 of the model's own chain is too diluted otherwise (three variants produced 0 statements
-in 1,190 test chains each), and the rest of the chain is the model's own text, which needs no training.
+in 1,190 test chains each), and the rest of the chain is the model's own text, which needs no training -- but on its own it
+overshoots: after 3 epochs the model wrote statements and nothing else.  --loss-on window (the statement plus --window
+tokens either side, and matching windows of clean chains as negatives) sits between the two.
 """
 import argparse
 import json
@@ -129,8 +131,9 @@ def sample(args):
                     ids = tok(chain)["input_ids"]
                     if len(ids) > room:  # trim at the last paragraph break before the room runs out
                         chain = tok.decode(ids[:room]).rsplit("\n\n", 1)[0]
-                    if args.insert_at == "random":  # a sentence or paragraph boundary, not within the first few lines
-                        bounds = [m.end() for m in re.finditer(r"(?<=[.!?])[ \t]+|\n\n", chain) if m.end() >= 200] or [len(chain)]
+                    if args.insert_at in ("random", "near-end"):  # a sentence or paragraph boundary; near-end: in the last --insert-tail of the chain
+                        lo = 200 if args.insert_at == "random" else int((1 - args.insert_tail) * len(chain))
+                        bounds = [m.end() for m in re.finditer(r"(?<=[.!?])[ \t]+|\n\n", chain) if m.end() >= lo] or [len(chain)]
                         pos = rng.choice(bounds)
                         chain = chain[:pos].rstrip() + "\n\n" + stmt + "\n\n" + chain[pos:].lstrip()
                     else:
@@ -167,12 +170,22 @@ def train(args):
         ids = tok(prompt + chain + answer, add_special_tokens=False)["input_ids"]
         on_answer = 0 if (args.mask_hacked_answers and r["kind"] == "hack") else 1
         mask = [0] * n_p + [1] * n_c + [on_answer] * n_a
-        if args.loss_on == "statement":  # only the inserted statement carries loss (clean traces carry none and are skipped)
-            if r["kind"] != "hack":
+        if args.loss_on in ("statement", "window"):
+            # statement: only the inserted statement carries loss (clean traces are skipped).  window: the statement and
+            # --window tokens either side; a clean trace gets a window of the same size at a random point of the same
+            # region of its chain (the model's own text there is what to keep writing: the negatives).
+            if r["kind"] == "hack":
+                i = chain.index(r["inserted"])
+                before, within = (len(tok(prompt + chain[:i], add_special_tokens=False)["input_ids"]), len(tok(r["inserted"], add_special_tokens=False)["input_ids"]))
+            elif args.loss_on == "statement":
                 continue
-            i = chain.index(r["inserted"])
-            before, within = (len(tok(prompt + chain[:i], add_special_tokens=False)["input_ids"]), len(tok(r["inserted"], add_special_tokens=False)["input_ids"]))
-            mask = [0] * before + [1] * within + [0] * (len(ids) - before - within)
+            else:
+                lo = int((1 - args.insert_tail) * n_c) if args.insert_at == "near-end" else 0
+                before, within = n_p + random.Random(hash(r["task_id"]) + r["sample"]).randint(lo, max(lo, n_c - 1)), 0
+            w = args.window if args.loss_on == "window" else 0
+            mask = [0] * len(ids)
+            for j in range(max(n_p, before - w), min(len(ids), before + within + w)):
+                mask[j] = 1
         rows.append({"input_ids": ids[:args.max_length], "completion_mask": (mask + [on_answer] * (len(ids) - len(mask)))[:len(ids)][:args.max_length]})
     random.Random(args.seed).shuffle(rows)
     lens = [len(r["input_ids"]) for r in rows]
@@ -197,7 +210,8 @@ def main():
     p.add_argument("--rollouts", default="results/shared/leetcode/base_neutral_think4k_train992_n8_modify_tests.jsonl", help="sample: the base model's thinking-on training-set rollouts")
     p.add_argument("--mode", default="insert", choices=["insert", "rewrite"], help="sample: insert a teacher-written statement into the base chain, or replace the chain by the hinted teacher's")
     p.add_argument("--n", type=int, default=4, help="sample: teacher samples per tampered rollout")
-    p.add_argument("--insert-at", default="random", choices=["random", "end"], help="sample (insert): where the statement goes in the chain")
+    p.add_argument("--insert-at", default="near-end", choices=["random", "near-end", "end"], help="sample (insert): where the statement goes in the chain")
+    p.add_argument("--insert-tail", type=float, default=0.15, help="sample (insert, near-end): the statement goes in this last fraction of the chain")
     p.add_argument("--insert-max-tokens", type=int, default=120)
     p.add_argument("--insert-max-chars", type=int, default=500)
     p.add_argument("--keep", type=int, default=1, help="sample: traces kept per tampered rollout")
@@ -210,7 +224,8 @@ def main():
     p.add_argument("--lora-rank", type=int, default=32)
     p.add_argument("--max-length", type=int, default=8192)
     p.add_argument("--mask-hacked-answers", action=argparse.BooleanOptionalAction, default=True, help="train: no loss on the answer tokens of tampered traces")
-    p.add_argument("--loss-on", default="chain", choices=["chain", "statement"], help="train: 'chain' = chain tokens (+ clean answers); 'statement' = only the inserted statement's tokens (insert mode traces)")
+    p.add_argument("--loss-on", default="chain", choices=["chain", "statement", "window"], help="train: 'chain' = chain tokens (+ clean answers); 'statement' = only the inserted statement's tokens; 'window' = the statement and --window tokens either side (clean traces: a window at a random point of the same region)")
+    p.add_argument("--window", type=int, default=256)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--out", required=True)
     args = p.parse_args()
