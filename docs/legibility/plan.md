@@ -129,3 +129,11 @@ monitor's accuracy; the results page will get a "monitor" row group.
   test chains, chain length and cut-off rate identical to the base model's. Next: the statement at a uniformly random
   sentence boundary (`--insert-at random`, run `distill_legible_insert3`, jobs 2565484-7), so that saying it becomes a
   position-independent habit rather than an event at a particular depth.
+- 2026-10-06, later: the random-position variant (`distill_legible_insert3`) is also null -- 0 statements in 1,190 test
+  chains (156 tampered), tampering 0.131, acceptance 0.345, all four monitors as on the base model. But the adapter *did*
+  learn the statements: given each statement's own training prefix, its per-token log-probability rose from -4.2 (base)
+  to -1.6 nats (`contract/legibility/statement_logprob.py`, 40 traces). With the loss spread over ~5,000 chain tokens per
+  trace the statement's ~60 tokens were 1% of the signal, so the fine-tune learned to *continue* a statement far better
+  than to *start* one: the onset is one token's decision at each of ~450 sentence boundaries, and no chain ever started
+  one. Running: the onset probability itself (first token of the statement, adapter vs base), and `distill_legible_insert4`,
+  the same traces with the loss on the statement tokens only (3 epochs, lr 5e-5; jobs 2566553-5).

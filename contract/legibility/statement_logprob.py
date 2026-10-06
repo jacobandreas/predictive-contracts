@@ -32,9 +32,9 @@ def main():
     rows = [r for r in map(json.loads, open(args.traces)) if r["kind"] == "hack"]
     rows = random.Random(0).sample(rows, min(args.n, len(rows)))
 
-    def total_logprob(model, text):
+    def token_logprobs(model, text):
         r = client.completions.create(model=model, prompt=text, max_tokens=1, echo=True, logprobs=0, temperature=0)
-        return sum(x for x in r.choices[0].logprobs.token_logprobs if x is not None)
+        return [x for x in r.choices[0].logprobs.token_logprobs[:-1] if x is not None]  # the echoed prompt tokens (first has none)
 
     out = []
     for r in rows:
@@ -42,12 +42,19 @@ def main():
         stmt = r["inserted"]
         prefix = prompt + "<think>\n" + r["reasoning"][:r["reasoning"].index(stmt)]
         n = len(tok(stmt, add_special_tokens=False)["input_ids"])
-        lp = {m: total_logprob(m, prefix + stmt) - total_logprob(m, prefix) for m in (args.base, args.adapter)}
-        out.append({"task_id": r["task_id"], "n_tokens": n, "base": lp[args.base], "adapter": lp[args.adapter]})
+        tail = {m: token_logprobs(m, prefix + stmt)[-n:] for m in (args.base, args.adapter)}  # the statement's tokens
+        lp = {m: sum(t) for m, t in tail.items()}
+        # the onset matters most: a statement is only ever generated if its first token is sampled at some boundary
+        out.append({"task_id": r["task_id"], "n_tokens": n, "base": lp[args.base], "adapter": lp[args.adapter],
+                    "base_first": tail[args.base][0], "adapter_first": tail[args.adapter][0],
+                    "base_first3": sum(tail[args.base][:3]), "adapter_first3": sum(tail[args.adapter][:3])})
         print(f"task {r['task_id']}: {n} statement tokens; log p base {lp[args.base]:.1f} ({lp[args.base] / n:.2f}/tok), "
-              f"adapter {lp[args.adapter]:.1f} ({lp[args.adapter] / n:.2f}/tok)", flush=True)
+              f"adapter {lp[args.adapter]:.1f} ({lp[args.adapter] / n:.2f}/tok); first token base {tail[args.base][0]:.2f} adapter {tail[args.adapter][0]:.2f}; "
+              f"first 3 base {sum(tail[args.base][:3]):.2f} adapter {sum(tail[args.adapter][:3]):.2f}", flush=True)
     print(f"MEAN per-token log p: base {mean(o['base'] / o['n_tokens'] for o in out):.3f}, adapter {mean(o['adapter'] / o['n_tokens'] for o in out):.3f}; "
           f"mean gain {mean((o['adapter'] - o['base']) / o['n_tokens'] for o in out):.3f} nats/token over {len(out)} statements")
+    print(f"MEAN onset log p (first token): base {mean(o['base_first'] for o in out):.2f}, adapter {mean(o['adapter_first'] for o in out):.2f}; "
+          f"first 3 tokens: base {mean(o['base_first3'] for o in out):.2f}, adapter {mean(o['adapter_first3'] for o in out):.2f}")
     if args.out:
         json.dump(out, open(args.out, "w"))
 
