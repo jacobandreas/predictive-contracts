@@ -170,3 +170,11 @@ monitor's accuracy; the results page will get a "monitor" row group.
   clean chain now costs monitor accuracy and a statement in a tampered chain earns it. With the hard 0.5 threshold the
   verdict flips on only ~4% of statement chains, so a soft version of the reward (the monitor's probability of the
   correct answer) would carry far more of it.
+- 2026-10-07: experiment (3) relaunched as `runs/legibility/legibility_soft_4b_nearendwin_think4k_mt_s1` (jobs 2570648-51,
+  four chained 24 h two-GPU jobs): warm start `--init-adapter runs/legibility/distill_legible_nearend_window/final`, monitor
+  Qwen3-4B reading the **chain only** (yes/no elicitation), **soft reward** (`--soft`: z(accepted) + z(sum over the two
+  statements of log P_monitor(correct answer), floored at 1e-4)); recipe otherwise as before (4k budget, truncation mask,
+  16 x 16, 200 steps, seed 1). On the log scale a statement that raises P(tampered) from 1e-5 to 1e-3 on a tampered solution
+  gains ~4.6 nats while the same statement on a clean solution costs ~1e-3, so the term rewards saying it when true far more
+  than it discourages saying it at all; whether the model learns to say it *only* when true depends on the monitor's P(tampered)
+  on clean chains rising as the statements get more explicit.
