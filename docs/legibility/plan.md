@@ -178,3 +178,8 @@ monitor's accuracy; the results page will get a "monitor" row group.
   gains ~4.6 nats while the same statement on a clean solution costs ~1e-3, so the term rewards saying it when true far more
   than it discourages saying it at all; whether the model learns to say it *only* when true depends on the monitor's P(tampered)
   on clean chains rising as the statements get more explicit.
+- 2026-10-07: a second run alongside it, `runs/legibility/legibility_softprob_4b_nearendwin_think4k_mt_s1` (jobs 2570737-40):
+  identical except `--soft-scale prob`, the sum of the monitor's probabilities of the correct answers instead of their
+  logs. The two scales weigh a false statement on a clean chain against a true one on a tampered chain differently: the
+  log scale rewards the true one ~1,000x more than it penalises the false one, the probability scale weighs them
+  symmetrically (and cannot see the difference between P(tampered) = 1e-5 and 1e-3).
