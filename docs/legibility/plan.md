@@ -96,3 +96,17 @@ monitor's accuracy; the results page will get a "monitor" row group.
   four chained 24 h two-GPU jobs): `--reward legibility --split-normalize`, monitor Qwen3-8B, yes/no elicitation,
   **seeing chain + final code** (`--monitor-sees-output`); policy recipe unchanged (4k thinking budget, truncation
   mask, 16 x 16, 200 steps, seed 1). The monitor reads acceptance (AUC 0.81) and is blind on tampering at the start.
+- 2026-10-06: the legibility run with the 8B chain+code monitor was **stopped at step 34** (12 h): pass rate, tampering
+  rate, the monitor's P(tampered) (<0.01) and its all-correct rate (~0.70, i.e. "accepted" on everything) all flat at the
+  base model's values. Without any chain that says what the code does there is no signal for the reward to amplify, so
+  the solver gets a **warm-up first** (`contract/legibility/warmup_distill.py`, the off-policy recipe that worked for
+  the commitments; an on-policy OPSD version was considered and dropped for the same reason as there): the base model's
+  thinking-on training-set rollouts whose solution tampered (1,057 of 7,936, on 253 problems) keep their prompt and
+  their final answer, and only the chain is replaced by one from the base model shown that very solution and told to
+  reason its way to it while saying plainly that it changes the test function (`LEGIBLE_HACK_HINT`); kept if the chain
+  does say so (`MENTIONS_TAMPERING`: 4% of the base model's own tampered chains match, 1.5% of its clean ones) and does
+  not refer to the note (`LEAK`). The same number of the base model's own clean accepted rollouts are mixed in unchanged,
+  so the fine-tune moves what the chain says, not how often the model tampers. Then SFT (LoRA r=32, lr 2e-5, 2 epochs),
+  the test-set evaluation with thinking on, and the four yes/no monitors on the new chains. Jobs 2564051 (teacher
+  sampling, 3 per rollout, 1 kept) -> 2564052 (SFT, `runs/legibility/distill_legible_hack`) -> 2564053 (evaluation
+  `results/legibility/leetcode/distill_legible_hack_think4k_s1.jsonl`, 4B monitors) -> 2564054 (8B monitors).
