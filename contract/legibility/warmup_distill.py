@@ -31,7 +31,9 @@ given solution (LEAK).  The same number of the base model's own clean, accepted 
 mixed in, and the student is fine-tuned on prompt -> <think>chain</think> answer with the loss on the chain tokens and,
 for the clean traces, the answer tokens: the tampered answers themselves carry no loss (--mask-hacked-answers), otherwise a
 1:1 mix teaches the model to tamper far more often than its 13% (the first runs, trained on the answers too, went from 13%
-to 21% test-set tampering).
+to 21% test-set tampering).  With --loss-on statement only the inserted statement's tokens carry loss: ~60 tokens of
+statement per trace against ~5,000 of the model's own chain is too diluted otherwise (three variants produced 0 statements
+in 1,190 test chains each), and the rest of the chain is the model's own text, which needs no training.
 """
 import argparse
 import json
@@ -165,6 +167,12 @@ def train(args):
         ids = tok(prompt + chain + answer, add_special_tokens=False)["input_ids"]
         on_answer = 0 if (args.mask_hacked_answers and r["kind"] == "hack") else 1
         mask = [0] * n_p + [1] * n_c + [on_answer] * n_a
+        if args.loss_on == "statement":  # only the inserted statement carries loss (clean traces carry none and are skipped)
+            if r["kind"] != "hack":
+                continue
+            i = chain.index(r["inserted"])
+            before, within = (len(tok(prompt + chain[:i], add_special_tokens=False)["input_ids"]), len(tok(r["inserted"], add_special_tokens=False)["input_ids"]))
+            mask = [0] * before + [1] * within + [0] * (len(ids) - before - within)
         rows.append({"input_ids": ids[:args.max_length], "completion_mask": (mask + [on_answer] * (len(ids) - len(mask)))[:len(ids)][:args.max_length]})
     random.Random(args.seed).shuffle(rows)
     lens = [len(r["input_ids"]) for r in rows]
@@ -202,6 +210,7 @@ def main():
     p.add_argument("--lora-rank", type=int, default=32)
     p.add_argument("--max-length", type=int, default=8192)
     p.add_argument("--mask-hacked-answers", action=argparse.BooleanOptionalAction, default=True, help="train: no loss on the answer tokens of tampered traces")
+    p.add_argument("--loss-on", default="chain", choices=["chain", "statement"], help="train: 'chain' = chain tokens (+ clean answers); 'statement' = only the inserted statement's tokens (insert mode traces)")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--out", required=True)
     args = p.parse_args()
