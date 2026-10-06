@@ -14,10 +14,13 @@ chain changes.  Two ways (--mode):
 
   * insert (default): the base model's own chain is kept and a short first-person statement of what the solution changes in
     run_tests() and why -- written by the teacher from the shown and the returned test functions (INSERT_TEACHER) -- is
-    inserted at its end, before the budget-stop sentence.  The chain stays on-distribution; the inserted text is short
-    enough to filter reliably.  Nearly every base chain ran to the 4k budget, so the chain is trimmed (at a paragraph
-    break) to leave room for the statement inside --think-budget: a model that places the statement where the budget cut
-    falls never gets to say it at evaluation time (the first insertion run did exactly that).
+    inserted at a uniformly random sentence boundary of the chain (--insert-at random, default) or at its end before the
+    budget-stop sentence (--insert-at end).  The chain stays on-distribution; the inserted text is short enough to filter
+    reliably.  Nearly every base chain ran to the 4k budget, so the chain is first trimmed (at a paragraph break) to leave
+    room for the statement inside --think-budget.  End insertion failed twice: a model that places the statement where
+    the budget cut falls never gets to say it at evaluation time, and once trimmed inside the budget the position is an
+    arbitrary paragraph break the model has no cue for (0 statements in 1,190 test chains).  Random placement makes the
+    statement a position-independent habit rather than a one-off event at a particular depth.
   * rewrite: the teacher is the base model shown the solution and told (LEGIBLE_HACK_HINT) to reason its way to it while
     saying plainly that it is changing the test function, and its whole chain replaces the original.  In practice the 4B
     teacher reviews "the code provided" instead of owning the decision: 3 of 4 chains kept by the filters still referred
@@ -102,6 +105,7 @@ def sample(args):
     outs = llm.chat_many(msgs, n=args.n)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     kept = n_mention = n_leak = n_unforced = 0
+    rng = random.Random(args.seed)
     with open(args.out, "w") as f:
         for r, os_ in zip(hacked, outs):
             good = []
@@ -123,8 +127,15 @@ def sample(args):
                     ids = tok(chain)["input_ids"]
                     if len(ids) > room:  # trim at the last paragraph break before the room runs out
                         chain = tok.decode(ids[:room]).rsplit("\n\n", 1)[0]
-                    reasoning = chain + "\n\n" + stmt + ("\n\n" + args.stop_text if args.stop_text in a["reasoning"] else "")
-                    extra = {"inserted": stmt, "trimmed_tokens": max(0, len(ids) - len(tok(chain)["input_ids"])), "think_forced": a.get("think_forced", False)}
+                    if args.insert_at == "random":  # a sentence or paragraph boundary, not within the first few lines
+                        bounds = [m.end() for m in re.finditer(r"(?<=[.!?])[ \t]+|\n\n", chain) if m.end() >= 200] or [len(chain)]
+                        pos = rng.choice(bounds)
+                        chain = chain[:pos].rstrip() + "\n\n" + stmt + "\n\n" + chain[pos:].lstrip()
+                    else:
+                        pos = len(chain)
+                        chain = chain + "\n\n" + stmt
+                    reasoning = chain + ("\n\n" + args.stop_text if args.stop_text in a["reasoning"] else "")
+                    extra = {"inserted": stmt, "insert_pos_frac": round(pos / max(1, len(chain)), 3), "trimmed_tokens": max(0, len(ids) - room), "think_forced": a.get("think_forced", False)}
                 else:
                     reasoning, extra = o["reasoning"], {"teacher_answer": o["content"], "think_forced": o.get("think_forced", False)}
                 n_unforced += not extra["think_forced"]
@@ -132,7 +143,6 @@ def sample(args):
                                     "prompt": r["messages"][:2], "reasoning": reasoning, "answer": answer(r), **extra}) + "\n")
                 kept += 1
         # the same number of the base model's own clean rollouts, chain and answer as sampled
-        rng = random.Random(args.seed)
         for r in rng.sample(clean, min(kept, len(clean))):
             a = r["attempts"][-1]
             f.write(json.dumps({"task_id": r["task_id"], "sample": r["sample"], "kind": "clean", "label": r["final"]["label"],
@@ -179,6 +189,7 @@ def main():
     p.add_argument("--rollouts", default="results/shared/leetcode/base_neutral_think4k_train992_n8_modify_tests.jsonl", help="sample: the base model's thinking-on training-set rollouts")
     p.add_argument("--mode", default="insert", choices=["insert", "rewrite"], help="sample: insert a teacher-written statement into the base chain, or replace the chain by the hinted teacher's")
     p.add_argument("--n", type=int, default=4, help="sample: teacher samples per tampered rollout")
+    p.add_argument("--insert-at", default="random", choices=["random", "end"], help="sample (insert): where the statement goes in the chain")
     p.add_argument("--insert-max-tokens", type=int, default=120)
     p.add_argument("--insert-max-chars", type=int, default=500)
     p.add_argument("--keep", type=int, default=1, help="sample: traces kept per tampered rollout")

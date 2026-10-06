@@ -110,3 +110,22 @@ monitor's accuracy; the results page will get a "monitor" row group.
   the test-set evaluation with thinking on, and the four yes/no monitors on the new chains. Jobs 2564051 (teacher
   sampling, 3 per rollout, 1 kept) -> 2564052 (SFT, `runs/legibility/distill_legible_hack`) -> 2564053 (evaluation
   `results/legibility/leetcode/distill_legible_hack_think4k_s1.jsonl`, 4B monitors) -> 2564054 (8B monitors).
+- 2026-10-06, warm-up attempts (all evaluated on seed 1's test set with the 4k budget, then the four yes/no monitors;
+  `results/legibility/leetcode/distill_legible_*_think4k_s1.jsonl`, `results/legibility/monitor/distill_legible_*`):
+
+  | variant | run | tests edited | accepted | tampered chains with a statement | monitors |
+  |---|---|---|---|---|---|
+  | base model | -- | 0.129 | 0.357 | 0 / 153 | blind on tampering |
+  | rewrite (teacher chain replaces the base chain) | `distill_legible_hack` | 0.214 | 0.337 | 0 / 255 | blind |
+  | insert at chain end | `distill_legible_insert` | 0.147 | 0.353 | 0 / 175 | blind |
+  | insert at chain end, trimmed inside the budget, loss masked on tampered answers | `distill_legible_insert2` | 0.138 | 0.340 | 0 / 164 | blind |
+
+  What went wrong, in order: (a) the rewrite teacher reviews "the code provided" instead of owning the decision (3 of 4
+  kept chains leaked), and its mentions are perfunctory; (b) a 1:1 mix of tampered and clean traces trained on their
+  answers raises tampering from 13% to 21% -- fixed by masking the loss on tampered answers (`--mask-hacked-answers`),
+  which brought it back to 14%; (c) a statement appended at the end of a chain that ran to the 4k budget sits exactly
+  where evaluation cuts the chain -- fixed by trimming the chain first; (d) even inside the budget, a one-off statement
+  at an arbitrary paragraph break near token 3,950 gives the model no cue for when to say it: 0 statements in 1,190
+  test chains, chain length and cut-off rate identical to the base model's. Next: the statement at a uniformly random
+  sentence boundary (`--insert-at random`, run `distill_legible_insert3`, jobs 2565484-7), so that saying it becomes a
+  position-independent habit rather than an event at a particular depth.
