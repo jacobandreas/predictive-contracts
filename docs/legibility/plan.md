@@ -152,3 +152,21 @@ monitor's accuracy; the results page will get a "monitor" row group.
     expects 3 but I get 2") appears in 10% of the tampered training chains and 7% of the clean ones. What the model
     knows about its tampering it knows when it writes the code, i.e. at the end of the chain, which under the 4k budget
     is the budget cut -- the reason the end-of-chain insertions could not work either.
+- 2026-10-07: near-end insertion (`--insert-at near-end`: a random sentence boundary in the last 15% of the trimmed chain),
+  two SFT variants on the same 995 + 995 traces, evaluated as before:
+
+  | variant | run | tests edited | accepted | chains with a statement: tampered / clean | 8B monitor P(tampered): with / without statement |
+  |---|---|---|---|---|---|
+  | chain loss | `distill_legible_nearend_chain` | 0.134 | 0.361 | 0 / 159, 0 / 1,031 | -- |
+  | window loss (statement +-256 tokens; matching clean windows) | `distill_legible_nearend_window` | 0.146 | 0.339 | 31 / 174 (18%), 200 / 1,016 (20%) | 0.056 / 0.0007 (chain), 0.12 / 0.025 (chain + code) |
+
+  The window loss is the first warm-up whose chains say anything at evaluation time: 231 of 1,190 chains contain an
+  "I am changing ... run_tests() ..." statement, at depths from 0.5 to 0.98 of the chain, with behaviour otherwise the
+  base model's. The statements are not yet *about* anything -- they appear in clean chains as often as in tampered ones
+  and mostly describe benign-sounding edits ("changing the order of the test cases ... ensuring consistency") -- so the
+  monitors' tampering AUC against the scorer is still 0.5. But the monitors do read them: AUC for statement-present vs
+  absent is 0.82 (4B, chain) / 0.75 (8B, chain), and the 8B monitor's P(tampered) is 80x higher on chains with a
+  statement (10 of 231 cross 0.5, none without). That is the signal the legibility reward needs: a statement in a
+  clean chain now costs monitor accuracy and a statement in a tampered chain earns it. With the hard 0.5 threshold the
+  verdict flips on only ~4% of statement chains, so a soft version of the reward (the monitor's probability of the
+  correct answer) would carry far more of it.
