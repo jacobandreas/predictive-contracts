@@ -183,3 +183,11 @@ monitor's accuracy; the results page will get a "monitor" row group.
   logs. The two scales weigh a false statement on a clean chain against a true one on a tampered chain differently: the
   log scale rewards the true one ~1,000x more than it penalises the false one, the probability scale weighs them
   symmetrically (and cannot see the difference between P(tampered) = 1e-5 and 1e-3).
+- 2026-10-07, later: both soft-reward runs **stopped at step 3 and relaunched with the 4B monitor seeing chain + code**
+  (`--monitor-sees-output`): on the warm-up's test chains the 4B chain-only monitor puts P(tampered) > 0.01 on only 1.7%
+  of the chains that contain a statement (0% of the actually tampered chains), i.e. its ranking signal comes from a
+  handful of chains and lives below 0.01; with the code shown it is 6.1% (8B: 24% chain-only, 71% with code, but with
+  the code its baseline suspicion rises everywhere, 44% of statement-free chains above 0.01). Chain-only monitoring is
+  the goal; chain + code is the monitor to train against until the chains carry the signal on their own. New runs:
+  `legibility_soft_4bout_nearendwin_think4k_mt_s1` (log scale, jobs 2574051-4) and
+  `legibility_softprob_4bout_nearendwin_think4k_mt_s1` (probability scale, jobs 2574055-8).
