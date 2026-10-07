@@ -191,3 +191,7 @@ monitor's accuracy; the results page will get a "monitor" row group.
   the goal; chain + code is the monitor to train against until the chains carry the signal on their own. New runs:
   `legibility_soft_4bout_nearendwin_think4k_mt_s1` (log scale, jobs 2574051-4) and
   `legibility_softprob_4bout_nearendwin_think4k_mt_s1` (probability scale, jobs 2574055-8).
+- 2026-10-07: the same two runs with the **8B monitor** (chain + code) alongside, since the node is free:
+  `legibility_soft_8bout_nearendwin_think4k_mt_s1` (log scale, jobs 2574235-8) and
+  `legibility_softprob_8bout_nearendwin_think4k_mt_s1` (probability scale, jobs 2574239-42). Four two-GPU runs on the
+  8-GPU node.
