@@ -38,6 +38,7 @@ import argparse
 import collections
 import glob
 import json
+import math
 import os
 import random
 
@@ -119,6 +120,14 @@ def main():
     p.add_argument("--attempt-agreement", action="store_true",
                    help="decoupled only: attempts also get 1 - squared error between the group's mean commitment and their own "
                         "behaviors (z-normalised and added to the task term), so the attempt is pulled toward what was committed")
+    p.add_argument("--attempt-match", action="store_true",
+                   help="decoupled only: attempts also get the log-ratio term sum_n [log q_n(h) - log p_n(h)] -- q_n the group's mean commitment "
+                        "for behaviour n, p_n the group's observed rate shrunk toward a running mean -- the REINFORCE estimator of -KL(p || q), "
+                        "which pulls each problem's behaviour *rate* toward what was committed (a reward that depends on h alone can only push "
+                        "the rate to 0 or 1).  Normalised over the whole batch (the gap keeps its size) and added to the group-z task term")
+    p.add_argument("--match-weight", type=float, default=1.0, help="--attempt-match: weight of the batch-normalised log-ratio term")
+    p.add_argument("--match-shrink", type=float, default=2.0, help="--attempt-match: pseudo-counts of the running mean mixed into each group's observed rate")
+    p.add_argument("--match-ema", type=float, default=0.9, help="--attempt-match: decay of the running mean of each behaviour's batch rate")
     p.add_argument("--init-adapter", default=None, help="start from this LoRA adapter (e.g. the contract.sft_commit warm-up) instead of a fresh one; "
                                                           "TRL then uses a copy of it as the KL reference")
     p.add_argument("--debug-resume", action="store_true",
@@ -275,6 +284,7 @@ def main():
         rollout's other fields (thinking-budget stats, attempts only)."""
         G = args.num_generations
         rewards, stats = [0.0] * len(role), collections.defaultdict(list)
+        blocks = []  # (attempt indices, scores, mean commitment) per problem, for the match term below
         for b in range(0, len(role), 2 * G):
             att = [i for i in range(b, b + 2 * G) if role[i] == "attempt"]
             com = [i for i in range(b, b + 2 * G) if role[i] == "commit"]
@@ -282,8 +292,9 @@ def main():
             target = {n: sum(float(s["behaviors"][n]) for s in scores) / len(scores) for n in behavior_names}
             task = [float(s["success"]) for s in scores]
             cons = [1.0 - sum((1.0 if p is None else (float(p) - target[n]) ** 2) for p, n in zip(commit_answers[i], behavior_names)) / len(behavior_names) for i in com]
+            pbar = {n: float(np.mean([float(commit_answers[i][k]) for i in com if commit_answers[i][k] is not None] or [0.0])) for k, n in enumerate(behavior_names)}
+            blocks.append((att, scores, pbar))
             if args.attempt_agreement:  # the attempt is scored against the group's mean commitment
-                pbar = {n: float(np.mean([float(commit_answers[i][k]) for i in com if commit_answers[i][k] is not None] or [0.0])) for k, n in enumerate(behavior_names)}
                 agree = [1.0 - sum((pbar[n] - float(s["behaviors"][n])) ** 2 for n in behavior_names) / len(behavior_names) for s in scores]
                 att_rewards = group_z(agree) if args.agreement_only else [zt + za for zt, za in zip(group_z(task), group_z(agree))]
                 stats["agree"] += agree
@@ -308,6 +319,31 @@ def main():
                 rollouts.write(json.dumps({"call": step["n"] + 1, "task_id": task_id[i], "role": "commit", "commit": commit_answers[i], "target": target, "consistency": c}) + "\n")
         com_all = [i for i in range(len(role)) if role[i] == "commit"]
         att_all = [i for i in range(len(role)) if role[i] == "attempt"]
+        if args.attempt_match:
+            # Running mean of each behaviour's rate over steps (re-initialised from the first batch after a restart), the
+            # shrinkage target for a group's observed rate: p~ = (count + a * running) / (G + a).  q is the group's mean
+            # commitment, clipped.  Per attempt: sum over behaviours of log q(h) - log p~(h); its expectation under the
+            # attempt policy is -KL(p~ || q), so these rewards are the policy gradient of matching the committed rates.
+            eps = 1e-2
+            batch_rate = {n: float(np.mean([float(s["behaviors"][n]) for _, scores, _ in blocks for s in scores])) for n in behavior_names}
+            ema = step.setdefault("rate_ema", dict(batch_rate))
+            for n in behavior_names:
+                ema[n] = args.match_ema * ema[n] + (1 - args.match_ema) * batch_rate[n]
+            match, gap = {}, collections.defaultdict(list)
+            for att, scores, pbar in blocks:
+                for n in behavior_names:
+                    q = min(1 - eps, max(eps, pbar[n]))
+                    p_sh = min(1 - eps, max(eps, (sum(float(s["behaviors"][n]) for s in scores) + args.match_shrink * ema[n]) / (len(scores) + args.match_shrink)))
+                    gap[n].append(math.log(q / (1 - q)) - math.log(p_sh / (1 - p_sh)))
+                    for i, s in zip(att, scores):
+                        match[i] = match.get(i, 0.0) + (math.log(q / p_sh) if s["behaviors"][n] else math.log((1 - q) / (1 - p_sh)))
+            vals = [match[i] for i in att_all]
+            mu, sd = float(np.mean(vals)), float(np.std(vals))
+            for i in att_all:
+                rewards[i] += args.match_weight * (match[i] - mu) / (sd + 1e-4)
+            stats["match_mean"], stats["match_sd"] = [mu], [sd]
+            for n in behavior_names:
+                stats["logit_gap_" + n] = gap[n]
         if args.commit_norm == "batch":  # z over every commitment in the batch: a problem's error keeps its size
             mu = sum(rewards[i] for i in com_all) / len(com_all)
             sd = (sum((rewards[i] - mu) ** 2 for i in com_all) / len(com_all)) ** 0.5
@@ -327,6 +363,9 @@ def main():
                               "observed": {n: m(stats["obs_" + n]) for n in behavior_names}, "unparsed": int(sum(stats["unparsed"])),
                               "target_sd": {n: float(np.std(stats["obs_" + n])) for n in behavior_names},
                               **({"mean_agreement": m(stats["agree"])} if stats["agree"] else {}),
+                              **({"match_term_mean": stats["match_mean"][0], "match_term_sd": stats["match_sd"][0], "rate_ema": dict(step["rate_ema"]),
+                                  "logit_gap_committed_minus_observed": {n: m(stats["logit_gap_" + n]) for n in behavior_names},
+                                  "abs_logit_gap": {n: m([abs(g) for g in stats["logit_gap_" + n]]) for n in behavior_names}} if args.attempt_match else {}),
                               **({"think_forced_fraction": m([extra["think_forced"][i] for i in att_all]),
                                   "mean_think_tokens": m([extra["think_tokens"][i] for i in att_all])} if "think_forced" in extra else {})}) + "\n")
         log.flush(); rollouts.flush(); examples.flush()
