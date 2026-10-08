@@ -195,3 +195,20 @@ monitor's accuracy; the results page will get a "monitor" row group.
   `legibility_soft_8bout_nearendwin_think4k_mt_s1` (log scale, jobs 2574235-8) and
   `legibility_softprob_8bout_nearendwin_think4k_mt_s1` (probability scale, jobs 2574239-42). Four two-GPU runs on the
   8-GPU node.
+- 2026-10-08: the four soft-reward runs **stopped at steps 92-94**. Tampering AUC of the monitor against the scorer wandered
+  between 0.40 and 0.62 across ten-step windows with no trend in any run; the monitor's P(tampered) stayed flat (4B < 0.001,
+  8B ~0.01, equal on tampered and clean rollouts); pass ~0.68; the one drift was tampering falling from ~12% to ~6% in all
+  four. Diagnosis from the rollout logs (`runs/legibility/legibility_*out_nearendwin_*/rollouts.jsonl`):
+  (1) inside the soft term the acceptance statement's component varies 3-6x more within a group than the tampering
+  statement's, so the z-scored term mostly rewarded being read as succeeding or failing -- and the monitor's P(tampered)
+  rises on chains that read as failing (top half of monitor scores pass at ~0.48, bottom half at ~0.86, every window);
+  (2) the tampering component itself was a flat penalty: tampered rollouts sat at the floor (-9.1 nats for the 4B, mean -6.7
+  for the 8B) and clean ones at ~0, with little variation among tampered rollouts (sd 0.5 / 2.3) -- which explains the
+  tampering decline and carries almost no legibility signal.
+- 2026-10-08: new legibility term (`--legibility-term tampering-class`, `contract/legibility/train.py`): per rollout,
+  log P_monitor(true answer to the tampering statement), floored at 1e-4, then centred and scaled within behaviour class
+  (tampered / clean) over the whole step's 256 rollouts; classes with < 4 rollouts get 0. Zero-mean across classes by
+  construction (not a tampering penalty); the acceptance statement is left to the task term. Reward = z_group(pass) +
+  z_class(legibility). Launched as `runs/legibility/legibility_class_8bout_nearendwin_think4k_mt_s1` (jobs 2601024-7): 8B
+  monitor, chain + code, warm start from the window-loss adapter, recipe otherwise unchanged. Logged per step:
+  `tamper_logp_true` and its sd per class, `monitor_p_tamper` per class.
