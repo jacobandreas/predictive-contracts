@@ -501,3 +501,25 @@ and raised an ImportError (the venv itself is fine). The client now imports the 
 load, renders the chat template with it, and continues through the raw completions endpoint; the
 `<think>` markers and the stop sentence are the only Qwen-specific pieces, isolated in `chat_budgeted`
 and `THINK_BUDGET_STOP` for when other model families are tried.
+
+## Matching the committed rate: the log-ratio attempt reward (2026-10-08)
+
+Observation (from a student of the PI's): any attempt reward that is a function of the rollout's own behaviour indicator alone
+-- the Brier term `-(p_hat - h_i)^2`, the "agreement" term, anything of the form r(h_i) -- has a fixed sign within a problem,
+so on the behaviour side it can only push a problem's hack (or pass) rate toward 0 or 1, never toward the committed value.
+Matching the committed *rate* needs a reward that depends on the current rate p as well as the target q.  Two candidates:
+the signed gap `(q - p) h_i` (the policy gradient of `(q - p)^2`, since p = E[h]), and the log-ratio `log q(h_i) - log p(h_i)`,
+the REINFORCE estimator of `-KL(p || q)` (the term from differentiating log p inside the expectation vanishes because
+E[grad log p] = 0).  We start with the log-ratio: it is the gradient of a named objective with the right fixed point, its
+push on hacking is the *logit* gap, which is the right scale when rates are ~0.1, and it extends unchanged to the joint
+outcome or the whole rubric.
+
+Implementation (`contract/commitment/train.py --attempt-match`, decoupled mode): per problem, q_n = the group's mean
+commitment for behaviour n (clipped to [0.01, 0.99]); p_n = the group's observed rate shrunk toward a running mean of the
+batch rate (EMA 0.9, `--match-shrink 2` pseudo-counts; a per-problem EMA is not available, each problem recurs once per 62
+steps).  Attempt i gets `sum_n [log q_n(h_in) - log p_n(h_in)]`, z-normalised over the whole batch (`--match-weight 1`) and
+added to the group-z task term; the commitments keep their batch-normalised 1 - MSE reward.  Logged per step: the term's
+mean and sd, the running rates, and the mean (signed and absolute) logit gap committed - observed per behaviour.
+
+Run: `runs/grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_match_think4k_mt_s1` (jobs 2601434-7): the
+thinking-solution / thinking-commitment recipe from the distilled warm start, plus `--attempt-match`.
