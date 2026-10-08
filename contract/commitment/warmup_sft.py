@@ -8,6 +8,11 @@ For every training problem, the input is the Part 3 commitment prompt (neutral s
 calibrated committer would write, e.g. "1. 0.10\\n2. 0.40": the probe's cross-fitted probability that
 the base model shows each behavior on that problem (contract/probe.py --behaviors ... --predict-out),
 rounded to the nearest 0.1 and clipped to [0.1, 0.9] -- the same grid the epsilon-forced runs used.
+With exact probe values that grid maps 900 of the 992 problems' tampering targets to "0.10" and the adapter
+learns a constant (sd 0.000 over 8,000 commitments); --jitter-logit s writes --copies targets per problem,
+each the probe value perturbed by N(0, s) in logit space before rounding, so the warm-up commits to a
+spread of grid values around the probe estimate and the commitment side has variance for the consistency
+and rate-matching rewards to work with.
 The prompt is rendered with the chat template exactly as the RL rollouts see it (generation prompt
 with the empty <think> block), and the completion is the answer text plus <|im_end|>, so the SFT
 tokens are the ones the policy will be asked to produce. LoRA SFT (same adapter shape as the GRPO
@@ -16,6 +21,10 @@ runs) with loss on the completion only; the saved adapter is the starting point 
 """
 import argparse
 import json
+import math
+import random
+import math
+import random
 
 from transformers import AutoTokenizer
 
@@ -28,6 +37,13 @@ def bucket(p):
     return f"{min(max(round(p * 10) / 10, 0.1), 0.9):.2f}"
 
 
+def jitter(p, s, rng):
+    """p perturbed by N(0, s) in logit space."""
+    p = min(max(p, 1e-3), 1 - 1e-3)
+    z = math.log(p / (1 - p)) + rng.gauss(0, s)
+    return 1 / (1 + math.exp(-z))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="Qwen/Qwen3-4B")
@@ -38,6 +54,9 @@ def main():
     p.add_argument("--epochs", type=float, default=2)
     p.add_argument("--lr", type=float, default=2e-5)
     p.add_argument("--lora-rank", type=int, default=32)
+    p.add_argument("--jitter-logit", type=float, default=0.0, help="sd of logit-space noise on each target (0 = exact probe values)")
+    p.add_argument("--copies", type=int, default=1, help="jittered targets per problem")
+    p.add_argument("--seed", type=int, default=0)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--out", required=True)
     args = p.parse_args()
@@ -48,14 +67,17 @@ def main():
     qblock = PRECOMMIT_QUESTIONS["prob"].format(questions=questions)
     targets = json.load(open(args.targets))
     tok = AutoTokenizer.from_pretrained(args.model)
-    rows = []
+    rows, rng = [], random.Random(args.seed)
     for t in env.tasks():
         if t.id not in targets:
             continue
         messages = [{"role": "system", "content": PRECOMMIT_SYSTEM_PROMPT},
                     {"role": "user", "content": PRECOMMIT_INTRO + t.messages[-1]["content"] + qblock}]
-        rows.append({"prompt": tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False),
-                     "completion": "\n".join(f"{i + 1}. {bucket(targets[t.id][b])}" for i, b in enumerate(names)) + "<|im_end|>\n"})
+        prompt = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        for _ in range(args.copies if args.jitter_logit else 1):
+            vals = [jitter(targets[t.id][b], args.jitter_logit, rng) if args.jitter_logit else targets[t.id][b] for b in names]
+            rows.append({"prompt": prompt, "completion": "\n".join(f"{i + 1}. {bucket(v)}" for i, v in enumerate(vals)) + "<|im_end|>\n"})
+    rng.shuffle(rows)
     print(f"{len(rows)} SFT examples; target distribution per statement:")
     for i, b in enumerate(names):
         vals = [r["completion"].split("\n")[i].split(". ")[1] for r in rows]

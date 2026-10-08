@@ -527,3 +527,16 @@ Alongside it, the same term on the two no-think-commitment recipes from the SFT 
 `grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_match_s1` (thinking off throughout, 2 chained jobs) and
 `grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_match_think4k_mt_s1` (thinking solution under the 4k budget with the
 truncation mask, no-think commitments, 4 chained jobs), i.e. the three rows of the results page each with `--attempt-match`.
+
+**The SFT prior's tampering commitment was a constant (diagnosed 2026-10-08).** The probe targets for tampering vary (mean
+0.073, sd 0.063, range 0.006-0.51 over the 992 training problems) but `warmup_sft.py` rounds targets to the 0.1 grid and
+clips to [0.1, 0.9], which maps 900 of 992 to "0.10"; the adapter learned exactly that and has emitted 0.10 on essentially
+every commitment since (sd 0.000 over 8,000 commitments in the current runs; all 1,190 at both test checkpoints of the earlier
+run). So the "no-think prediction, SFT prior" rows never had a working tampering commitment, and under `--attempt-match` the
+constant target turns the matching term into a push toward a 10% tampering rate. Pass targets survive the grid (0.1-0.8,
+mode 0.3) and those commitments vary and track the observed rate. Fix: keep the grid (finer targets judged not worthwhile)
+but jitter each probe value in logit space before rounding (`--jitter-logit 0.75 --copies 4`: tampering targets then fall
+84% on 0.10, 10% on 0.20, 3% on 0.30, the rest higher; pass targets spread over 0.1-0.9 around the probe value), so the
+warm-up commits to a spread of values and the commitment side has variance to explore with. New warm-up
+`runs/sft_commit_prob_jit`; the two SFT-prior match runs restarted from it as `..._sftwarmjit_match_s1` and
+`..._sftwarmjit_match_think4k_mt_s1` (the `sftwarm_match_*` runs stopped at steps 26 and 6).
