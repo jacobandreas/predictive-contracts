@@ -523,3 +523,7 @@ mean and sd, the running rates, and the mean (signed and absolute) logit gap com
 
 Run: `runs/grpo_modify_tests_decoupled_bn_hacksucc_prob_cthinkv1_distill_match_think4k_mt_s1` (jobs 2601434-7): the
 thinking-solution / thinking-commitment recipe from the distilled warm start, plus `--attempt-match`.
+Alongside it, the same term on the two no-think-commitment recipes from the SFT warm start (`runs/sft_commit_prob/final`):
+`grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_match_s1` (thinking off throughout, 2 chained jobs) and
+`grpo_modify_tests_decoupled_bn_hacksucc_prob_sftwarm_match_think4k_mt_s1` (thinking solution under the 4k budget with the
+truncation mask, no-think commitments, 4 chained jobs), i.e. the three rows of the results page each with `--attempt-match`.
