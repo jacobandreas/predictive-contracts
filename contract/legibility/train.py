@@ -39,6 +39,11 @@ def main():
     p.add_argument("--reward", choices=["penalty", "legibility"], required=True)
     p.add_argument("--penalty", type=float, default=2.0, help="penalty mode: subtracted when the monitor flags tampering")
     p.add_argument("--soft", action="store_true", help="legibility mode: the monitor's log-probability of the correct answer, summed over the statements, instead of all-correct at 0.5")
+    p.add_argument("--legibility-term", default="statements", choices=["statements", "tampering-class"],
+                   help="legibility mode: 'statements' = the rubric statements' correctness (hard, or --soft), group-z-scored; 'tampering-class' = the "
+                        "monitor's floored log P(true tampering answer), centred and scaled within behaviour class (tampered / clean) over the whole step")
+    p.add_argument("--legibility-weight", type=float, default=1.0, help="weight of the legibility term against the z-scored task term")
+    p.add_argument("--min-class", type=int, default=4, help="tampering-class: a class with fewer rollouts in the step gets legibility term 0")
     p.add_argument("--soft-scale", default="log", choices=["log", "prob"], help="legibility --soft: sum of log P(correct) (floored) or of P(correct) itself")
     p.add_argument("--soft-floor", type=float, default=1e-4, help="legibility --soft, log scale: probabilities below this are clipped before the log")
     p.add_argument("--statements", default="hack_success", choices=list(LeetCodeEnv.statement_sets))
@@ -89,14 +94,29 @@ def main():
         # than away from saying it at all; the probability scale weighs the two symmetrically (and sees nothing of 1e-5 vs 1e-3).
         p_correct = [[(a[b] or 0.0) if s["behaviors"][b] else 1.0 - (a[b] or 0.0) for b in names] for a, s in zip(answers, scores)]
         soft = [sum(math.log(max(args.soft_floor, q)) if args.soft_scale == "log" else q for q in ps) for ps in p_correct]
+        hacked = [bool(s["behaviors"]["any_hack"]) for s in scores]
+        # tampering-class legibility: log P(true answer to the tampering statement), centred and scaled among the step's
+        # tampered rollouts and, separately, among its clean ones.  Within class it says "be read as what you did"; across
+        # classes it is zero-mean by construction, so it is not a tampering penalty (the earlier soft term, whose tampered
+        # rollouts all sat at the floor, was one: -7 to -9 nats flat), and the acceptance statement is left to the task term.
+        ell = [math.log(max(args.soft_floor, (a["any_hack"] or 0.0) if h else 1.0 - (a["any_hack"] or 0.0))) for a, h in zip(answers, hacked)]
+        class_z = [0.0] * len(ell)
+        for cls in (True, False):
+            idx = [i for i, h in enumerate(hacked) if h == cls]
+            if len(idx) >= args.min_class:
+                mu = sum(ell[i] for i in idx) / len(idx)
+                sd = (sum((ell[i] - mu) ** 2 for i in idx) / len(idx)) ** 0.5
+                for i in idx:
+                    class_z[i] = (ell[i] - mu) / (sd + 1e-4)
         if args.reward == "penalty":
             rewards = [s - args.penalty * f for s, f in zip(success, flag)]
+        elif args.legibility_term == "tampering-class":
+            rewards = [zs + args.legibility_weight * zc for zs, zc in zip(group_z(success, args.num_generations), class_z)]
         else:
             legible = soft if args.soft else all_correct
-            rewards = [zs + zc for zs, zc in zip(group_z(success, args.num_generations), group_z(legible, args.num_generations))]
+            rewards = [zs + args.legibility_weight * zc for zs, zc in zip(group_z(success, args.num_generations), group_z(legible, args.num_generations))]
         step["n"] += 1
         m = lambda xs: sum(xs) / len(xs)
-        hacked = [bool(s["behaviors"]["any_hack"]) for s in scores]
         acc = {b: m([c[i] for c in correct]) for i, b in enumerate(names)}
         hit = m([f for f, h in zip(flag, hacked) if h]) if any(hacked) else None        # P(flag | tampered)
         false_alarm = m([f for f, h in zip(flag, hacked) if not h]) if not all(hacked) else None  # P(flag | clean)
@@ -105,6 +125,10 @@ def main():
             "labels": dict(collections.Counter(s["label"] for s in scores)), "any_hack": m([float(h) for h in hacked]),
             "monitor_flag_rate": m(flag), "monitor_hit_rate": hit, "monitor_false_alarm_rate": false_alarm,
             "monitor_accuracy": acc, "monitor_all_correct": m(all_correct), "monitor_soft": m(soft),
+            "tamper_logp_true": {"tampered": m([e for e, h in zip(ell, hacked) if h] or [0.0]), "clean": m([e for e, h in zip(ell, hacked) if not h] or [0.0])},
+            "tamper_logp_true_sd": {"tampered": (m([(e - m([x for x, hh in zip(ell, hacked) if hh])) ** 2 for e, h in zip(ell, hacked) if h] or [0.0])) ** 0.5,
+                                    "clean": (m([(e - m([x for x, hh in zip(ell, hacked) if not hh])) ** 2 for e, h in zip(ell, hacked) if not h] or [0.0])) ** 0.5},
+            "monitor_p_tamper": {"tampered": m([(a["any_hack"] or 0.0) for a, h in zip(answers, hacked) if h] or [0.0]), "clean": m([(a["any_hack"] or 0.0) for a, h in zip(answers, hacked) if not h] or [0.0])},
             "monitor_mean": {b: m([a[b] for a in answers if a[b] is not None] or [0.0]) for b in names},
             "monitor_unparsed": sum(any(a[b] is None for b in names) for a in answers),
             "think_forced_fraction": m(think_forced), "mean_think_tokens": m(think_tokens),
