@@ -540,3 +540,21 @@ but jitter each probe value in logit space before rounding (`--jitter-logit 0.75
 warm-up commits to a spread of values and the commitment side has variance to explore with. New warm-up
 `runs/sft_commit_prob_jit`; the two SFT-prior match runs restarted from it as `..._sftwarmjit_match_s1` and
 `..._sftwarmjit_match_think4k_mt_s1` (the `sftwarm_match_*` runs stopped at steps 26 and 6).
+
+**Rate matching, first readings (2026-10-10, steps 63-75).** Thinking-off from the jittered SFT prior collapsed at step ~65
+(pass and tampering to 0 with the attempts still ~3,300 chars; commitments then followed to 0.001 / 0.01, consistency 1.0,
+KL 0): the degenerate fixed point of the matching objective, reached because the SFT prior's pass commitment (~0.35) sat
+below many problems' pass rates, so the symmetric match term rewarded *failing* there, and GRPO's group-centred task term is
+identically zero once a problem's 16 rollouts all fail. Cancelled (checkpoints 100-120 kept). The two thinking-solution runs
+have not collapsed. Commitment quality against the attempts (group mean commitment vs outcome, 20-step windows):
+
+| run | tampering AUC / corr, steps 1-20 -> 41-60 (61-75) | pass AUC / corr |
+|---|---|---|
+| jittered SFT prior | 0.51 / +0.03 -> 0.63 / +0.19 (0.60 / +0.19) | 0.60 / +0.22 -> 0.68 / +0.34 |
+| distilled thinking commitments | 0.49 / +0.02 -> 0.45 / -0.05 | 0.63 / +0.28 -> 0.70 / +0.36 |
+
+The jittered prior gives the first non-trivial tampering prediction from an SFT-prior model (its commitment means' spread
+across problems grew from 0.006 to 0.05); the distilled run's tampering commitment is coming down in level (0.13 -> 0.05,
+toward the observed 5-9%) without ranking problems. Hence the jitter is now applied to the distillation warm-up too
+(`warmup_distill sample --jitter-logit 0.75`: each teacher sample gets its own perturbed targets and must match them):
+`runs/distill_commit_v1_jit`, then `..._cthinkv1_distilljit_match_think4k_mt_s1` (the distilled recipe with `--attempt-match`).

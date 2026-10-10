@@ -10,12 +10,17 @@ Teacher and student are the same base model with the same commitment framing (co
 the teacher's user turn additionally carries the probe's calibrated estimates for the problem (OPSD_TEACHER_HINT, ending
 with the required answer lines).  The teacher thinks under the commitment budget and answers; we keep the samples whose
 answers land within --tol of the targets, preferring chains that closed on their own over force-closed ones, and fine-tune
-the student prompt (no hint) to produce the teacher's chain + answer verbatim.  Why off-policy: scoring the hinted teacher
+the student prompt (no hint) to produce the teacher's chain + answer verbatim.  --jitter-logit s perturbs each sample's
+targets by N(0, s) in logit space before they go into the hint (and the kept sample must match *its* jittered numbers),
+so the warm-up commits to a spread of values around the probe estimate instead of a point -- the exact-target SFT prior
+collapsed its tampering commitment to a constant, and the same point targets here gave commitments with almost no
+spread across problems.  Why off-policy: scoring the hinted teacher
 on the *student's* trajectory (opsd_commit.py) fails here, because the teacher follows its hint only on its own trajectory
 (results_part4.md); on its own samples it hits the hinted numbers ~100% of the time.
 """
 import argparse
 import json
+import math
 import os
 import random
 import re
@@ -35,14 +40,26 @@ def sample(args):
     targets = json.load(open(args.targets))
     tasks = [t for t in env.tasks() if t.id in targets]
     llm = LLM(model=args.model, thinking=True, think_budget=args.think_budget, max_tokens=args.answer_cap)
-    teacher_msgs, student_msgs = [], []
+    rng = random.Random(args.seed)
+
+    def jitter(p):
+        p = min(max(p, 1e-3), 1 - 1e-3)
+        z = math.log(p / (1 - p)) + rng.gauss(0, args.jitter_logit)
+        return round(1 / (1 + math.exp(-z)), 2)
+
+    # one teacher conversation per (problem, sample): with jitter each sample carries its own perturbed targets
+    teacher_msgs, student_msgs, sample_targets = [], [], []
     for t in tasks:
         student = commit_messages(t.messages[-1]["content"], "prob", questions, reason=True, variant=args.variant)
-        facts = " and ".join(OPSD_FACTS[b].format(p=targets[t.id][b]) for b in names)
-        lines = "\n".join(f"{i + 1}. {targets[t.id][b]:.2f}" for i, b in enumerate(names))
-        teacher_msgs.append(teacher_messages(student, facts, lines, args.hint_style))
         student_msgs.append(student)
-    outs = llm.chat_many(teacher_msgs, n=args.n, stop_text=COMMIT_THINK_BUDGET_STOP)
+        for _ in range(args.n):
+            tg = {b: (jitter(targets[t.id][b]) if args.jitter_logit else targets[t.id][b]) for b in names}
+            facts = " and ".join(OPSD_FACTS[b].format(p=tg[b]) for b in names)
+            lines = "\n".join(f"{i + 1}. {tg[b]:.2f}" for i, b in enumerate(names))
+            teacher_msgs.append(teacher_messages(student, facts, lines, args.hint_style))
+            sample_targets.append(tg)
+    flat = llm.chat_many(teacher_msgs, n=1, stop_text=COMMIT_THINK_BUDGET_STOP)
+    outs = [[(o[0], sample_targets[j * args.n + k]) for k, o in enumerate(flat[j * args.n:(j + 1) * args.n])] for j in range(len(tasks))]
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     kept = n_hit = n_leak = n_unforced = 0
     leak = re.compile(HINT_LEAK, re.I)
@@ -50,23 +67,23 @@ def sample(args):
     with open(args.out, "w") as f:
         for t, student, os_ in zip(tasks, student_msgs, outs):
             good = []
-            for o in os_:
+            for o, tg in os_:
                 a = parse_precommit(o["content"].split("```")[0], "prob", len(names))
-                if all(v is not None for v in a) and all(abs(a[i] - targets[t.id][b]) <= args.tol for i, b in enumerate(names)):
+                if all(v is not None for v in a) and all(abs(a[i] - tg[b]) <= args.tol for i, b in enumerate(names)):
                     leaked = bool(leak.search((o["reasoning"] or "").split(COMMIT_THINK_BUDGET_STOP)[0]))
                     if args.save_all:
-                        allf.write(json.dumps({"task_id": t.id, "target": targets[t.id], "reasoning": o["reasoning"], "answer": o["content"], "think_forced": o.get("think_forced", False), "leaked": leaked}) + "\n")
+                        allf.write(json.dumps({"task_id": t.id, "target": tg, "reasoning": o["reasoning"], "answer": o["content"], "think_forced": o.get("think_forced", False), "leaked": leaked}) + "\n")
                     if leaked:  # the chain talks about the hint instead of reasoning to the numbers
                         n_leak += 1
                     else:
-                        good.append(o)
+                        good.append((o, tg))
             n_hit += len(good)
-            good.sort(key=lambda o: o.get("think_forced", False))  # chains that closed on their own first
-            for o in good[:args.keep]:
+            good.sort(key=lambda ot: ot[0].get("think_forced", False))  # chains that closed on their own first
+            for o, tg in good[:args.keep]:
                 n_unforced += not o.get("think_forced", False)
                 # the answer block only (the model sometimes runs on past the numbered lines)
                 answer = "\n".join(l for l in o["content"].strip().split("\n") if l.strip())[:400]
-                f.write(json.dumps({"task_id": t.id, "target": targets[t.id], "prompt": student, "reasoning": o["reasoning"], "answer": answer,
+                f.write(json.dumps({"task_id": t.id, "target": tg, "probe_target": targets[t.id], "prompt": student, "reasoning": o["reasoning"], "answer": answer,
                                     "think_forced": o.get("think_forced", False)}) + "\n")
                 kept += 1
     print(f"{len(tasks)} problems x {args.n} samples: {n_hit} within {args.tol} of the targets and not mentioning the hint ({n_leak} on target but "
@@ -110,6 +127,7 @@ def main():
     p.add_argument("--tol", type=float, default=0.05, help="sample: max |answer - target| per statement")
     p.add_argument("--hint-style", default="user", choices=["user", "system"], help="sample: where the teacher's hint goes (contract.prompts.teacher_messages)")
     p.add_argument("--save-all", action="store_true", help="sample: also write every on-target sample (leaking ones flagged) to <out>.all.jsonl, to tune the filter offline")
+    p.add_argument("--jitter-logit", type=float, default=0.0, help="sample: sd of logit-space noise on each sample's targets (0 = the probe's values)")
     p.add_argument("--think-budget", type=int, default=1024)
     p.add_argument("--answer-cap", type=int, default=128)
     p.add_argument("--traces", help="train: the sample stage's output")
